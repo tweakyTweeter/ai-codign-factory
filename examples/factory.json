@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "worker": {
+    "argv": ["/absolute/path/to/trusted-worker"],
+    "timeout": "10m"
+  },
+  "checks": [
+    {"argv": ["go", "test", "./..."], "timeout": "2m"},
+    {"argv": ["go", "vet", "./..."], "timeout": "2m"}
+  ],
+  "profiles": {
+    "external-conductor": {
+      "argv": ["/absolute/path/to/your-conductor-wrapper"],
+      "timeout": "20m"
+    }
+  },
+  "beads_argv": ["bd"]
+}

@@ -1,0 +1,29 @@
+workflow:
+  name: factory-copilot-probe
+  description: Non-writing Copilot provider probe; not an implementation workflow.
+  entry_point: acknowledge
+  runtime:
+    provider: copilot
+    max_agent_iterations: 3
+    max_session_seconds: 60
+    max_idle_recovery_attempts: 0
+  limits:
+    max_iterations: 1
+    timeout_seconds: 90
+
+tools: []
+agents:
+  - name: acknowledge
+    tools: []
+    prompt: |
+      This is a coding-factory provider connectivity probe.
+      Do not access files, invoke tools, delegate, or modify anything.
+      Return status FACTORY_COPILOT_OK.
+    output:
+      status:
+        type: string
+        enum: ["FACTORY_COPILOT_OK"]
+    routes:
+      - to: $end
+output:
+  status: "{{ acknowledge.output.status }}"

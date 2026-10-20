@@ -1,0 +1,378 @@
+lockfile_version: '1'
+apm_version: 0.32.0
+dependencies:
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-agent-governance-reviewer
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/agent-governance-reviewer.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/agent-governance-reviewer.agent.md
+  deployed_file_hashes:
+    .github/agents/agent-governance-reviewer.agent.md: sha256:83fb9073c86faaba2b1b9c40f12037125261739ad008f8df59aa58dc45fa738d
+  content_hash: sha256:ce5e9012c2e7c18abf1c41852d5ecfd91ec8cc36be7e32322f40b8a8a4f5a75e
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-ai-team-dev
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/ai-team-dev.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/ai-team-dev.agent.md
+  deployed_file_hashes:
+    .github/agents/ai-team-dev.agent.md: sha256:043ac0905000a34c201f3ad3990e82dba0c981fd4adbf2260c8498ceeafd873a
+  content_hash: sha256:c128113b25b99563d2c057df3d33a9d0220637fc76ee3e347db9ebca10fbbe56
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-ai-team-producer
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/ai-team-producer.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/ai-team-producer.agent.md
+  deployed_file_hashes:
+    .github/agents/ai-team-producer.agent.md: sha256:ae3ee06a88783d74d70da2db21da63c2c1716b4a9f3896ae7144684be1f41805
+  content_hash: sha256:3023ceb31e998f2a44493f4ffcd0be1d9bbb7822893961eda1346cedda2df356
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-ai-team-qa
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/ai-team-qa.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/ai-team-qa.agent.md
+  deployed_file_hashes:
+    .github/agents/ai-team-qa.agent.md: sha256:eb07b8c2130f1a11d0fac4ef89f8ab3727501d840fc49b872461c4cfe91ef0cc
+  content_hash: sha256:fb07d1ca2bf71eb8d057c4321b9f469d0bce09ac4f312793aa601cfecc34593c
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-api-architect
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/api-architect.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/api-architect.agent.md
+  deployed_file_hashes:
+    .github/agents/api-architect.agent.md: sha256:0a503c0c0d18b1e78645262e12d70857978f14463e1bbb1db8fc80451ed50e41
+  content_hash: sha256:9737dd83c02900b1f1f4ed0ca6aeb438f90a1d36d20272f83cf4d52fe270e2b1
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-debug
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/debug.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/debug.agent.md
+  deployed_file_hashes:
+    .github/agents/debug.agent.md: sha256:2ac23b322866f85b15918847b7989887df0f167aefdd815f7790214412b6ccdc
+  content_hash: sha256:5fc1fa6dbc27dfa51dbc101fbc190c7704f12838726e4e1bb8e5c68d77d17aad
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-devops-expert
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/devops-expert.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/devops-expert.agent.md
+  deployed_file_hashes:
+    .github/agents/devops-expert.agent.md: sha256:63197c5250702760e79fb3ccb4e2b154b1a52b41ac62e7d45ae2def6eea23952
+  content_hash: sha256:fa7a318e88b5a91f72a4c6cda23f1cc863becdc0c14b141fd99dddc4d475c5fa
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-implementation-plan
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/implementation-plan.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/implementation-plan.agent.md
+  deployed_file_hashes:
+    .github/agents/implementation-plan.agent.md: sha256:eec19038008d9a73d21ddf679babf1f0e971a1b3bee3d11e6d17fbdb2e5082d0
+  content_hash: sha256:02db774aec7015a1fd816c0b043d24a95b0f82d31cf332b97e10fd590c1abb23
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-platform-sre-kubernetes
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/platform-sre-kubernetes.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/platform-sre-kubernetes.agent.md
+  deployed_file_hashes:
+    .github/agents/platform-sre-kubernetes.agent.md: sha256:ce7da8d73aaf59051481e32a7eca520fa536856f560aa3c6cdcdb3d14b5f5b0e
+  content_hash: sha256:419feba675da472813ba1a95914fa86e8555d870f38be47a6e7ffd10b337d9d4
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-postgresql-dba
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/postgresql-dba.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/postgresql-dba.agent.md
+  deployed_file_hashes:
+    .github/agents/postgresql-dba.agent.md: sha256:7b45c6ed35b5f5d46bade9a127a9975a1491c0046b48cc59a11c218a43f28355
+  content_hash: sha256:c34e297f47e7592e92a120eaff3bf9d48860fea79b3af05d1f6e010d89ecf2e9
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-principal-software-engineer
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/principal-software-engineer.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/principal-software-engineer.agent.md
+  deployed_file_hashes:
+    .github/agents/principal-software-engineer.agent.md: sha256:f0153bece9f3d0f87a9693f9b2a88e22756c156a727fe4dfc398cebb44d49185
+  content_hash: sha256:fb706804594c9197fb0ec84e22aaf936d08ea1e81fb9e7ae662d8f1775300f31
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-se-gitops-ci-specialist
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/se-gitops-ci-specialist.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/se-gitops-ci-specialist.agent.md
+  deployed_file_hashes:
+    .github/agents/se-gitops-ci-specialist.agent.md: sha256:8ca4679e0e55f39ecadc50834354a8d9ea7162b1ca1cdd13521ed59717148a76
+  content_hash: sha256:afe0c714ae9937385bb70b01c979729e1f2a812c174b3f4306efc6bbfcf07701
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-tdd-green
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/tdd-green.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/tdd-green.agent.md
+  deployed_file_hashes:
+    .github/agents/tdd-green.agent.md: sha256:4fc9b0de32880d56ffdba6127ed286ea435f9f568091eb6fb8f794878fa7e18c
+  content_hash: sha256:bab4827d8d0d226e2d709d7a9a9705cb0b83c5d83733af71036364a7da30af16
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-tdd-red
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/tdd-red.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/tdd-red.agent.md
+  deployed_file_hashes:
+    .github/agents/tdd-red.agent.md: sha256:b7eb397e9afec0414c4539952004c79ab0ae2e8cacee908a02e6265830c07898
+  content_hash: sha256:c894f3ef51c7088069ecd89910c547ef20f8c724f1d2895c3f732ff17a985af0
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-tdd-refactor
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/tdd-refactor.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/tdd-refactor.agent.md
+  deployed_file_hashes:
+    .github/agents/tdd-refactor.agent.md: sha256:4b1826279cb527534b6c0bcc54710d636bf870ab73da429f6f5cabdc085c5792
+  content_hash: sha256:69d9b617cf36469c5aefba14e8a61b11f0bef415e052e68ece0be35d06fdf5ba
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-terraform
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: agents/terraform.agent.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/agents/terraform.agent.md
+  deployed_file_hashes:
+    .github/agents/terraform.agent.md: sha256:611ccecc51541afe3ce8b4b2c9ef7a99cf7e15558523aac23855b44eeeba2ed1
+  content_hash: sha256:60fcc9224ead5fd0cfe0d941bb039d608888a6c87af4372080e49f547e78a6b2
+- repo_url: github/awesome-copilot
+  name: awesome-copilot-kubernetes-deployment-best-practices
+  host: github.com
+  resolved_commit: 613efc8c21d9b3ce642dff361d17006cd9967e28
+  version: 1.0.0
+  virtual_path: instructions/kubernetes-deployment-best-practices.instructions.md
+  is_virtual: true
+  package_type: apm_package
+  deployed_files:
+  - .github/instructions/kubernetes-deployment-best-practices.instructions.md
+  deployed_file_hashes:
+    .github/instructions/kubernetes-deployment-best-practices.instructions.md: sha256:0aa8ddf92cb0534b373a987dd3b1e7f39338fcc9b18cb9c7a7d002aa8780bc09
+  content_hash: sha256:71b4d3383a44f5c03fc90467ce8ff6fcd804653f23b50cd1a05e1fcc465c0c9b
+deployments:
+- kind: project-relative
+  target: copilot
+  value: .github/agents/agent-governance-reviewer.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/agent-governance-reviewer.agent.md
+  active_owner: github/awesome-copilot/agents/agent-governance-reviewer.agent.md
+  content_hash: sha256:83fb9073c86faaba2b1b9c40f12037125261739ad008f8df59aa58dc45fa738d
+- kind: project-relative
+  target: copilot
+  value: .github/agents/ai-team-dev.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/ai-team-dev.agent.md
+  active_owner: github/awesome-copilot/agents/ai-team-dev.agent.md
+  content_hash: sha256:043ac0905000a34c201f3ad3990e82dba0c981fd4adbf2260c8498ceeafd873a
+- kind: project-relative
+  target: copilot
+  value: .github/agents/ai-team-producer.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/ai-team-producer.agent.md
+  active_owner: github/awesome-copilot/agents/ai-team-producer.agent.md
+  content_hash: sha256:ae3ee06a88783d74d70da2db21da63c2c1716b4a9f3896ae7144684be1f41805
+- kind: project-relative
+  target: copilot
+  value: .github/agents/ai-team-qa.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/ai-team-qa.agent.md
+  active_owner: github/awesome-copilot/agents/ai-team-qa.agent.md
+  content_hash: sha256:eb07b8c2130f1a11d0fac4ef89f8ab3727501d840fc49b872461c4cfe91ef0cc
+- kind: project-relative
+  target: copilot
+  value: .github/agents/api-architect.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/api-architect.agent.md
+  active_owner: github/awesome-copilot/agents/api-architect.agent.md
+  content_hash: sha256:0a503c0c0d18b1e78645262e12d70857978f14463e1bbb1db8fc80451ed50e41
+- kind: project-relative
+  target: copilot
+  value: .github/agents/debug.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/debug.agent.md
+  active_owner: github/awesome-copilot/agents/debug.agent.md
+  content_hash: sha256:2ac23b322866f85b15918847b7989887df0f167aefdd815f7790214412b6ccdc
+- kind: project-relative
+  target: copilot
+  value: .github/agents/devops-expert.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/devops-expert.agent.md
+  active_owner: github/awesome-copilot/agents/devops-expert.agent.md
+  content_hash: sha256:63197c5250702760e79fb3ccb4e2b154b1a52b41ac62e7d45ae2def6eea23952
+- kind: project-relative
+  target: copilot
+  value: .github/agents/implementation-plan.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/implementation-plan.agent.md
+  active_owner: github/awesome-copilot/agents/implementation-plan.agent.md
+  content_hash: sha256:eec19038008d9a73d21ddf679babf1f0e971a1b3bee3d11e6d17fbdb2e5082d0
+- kind: project-relative
+  target: copilot
+  value: .github/agents/platform-sre-kubernetes.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/platform-sre-kubernetes.agent.md
+  active_owner: github/awesome-copilot/agents/platform-sre-kubernetes.agent.md
+  content_hash: sha256:ce7da8d73aaf59051481e32a7eca520fa536856f560aa3c6cdcdb3d14b5f5b0e
+- kind: project-relative
+  target: copilot
+  value: .github/agents/postgresql-dba.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/postgresql-dba.agent.md
+  active_owner: github/awesome-copilot/agents/postgresql-dba.agent.md
+  content_hash: sha256:7b45c6ed35b5f5d46bade9a127a9975a1491c0046b48cc59a11c218a43f28355
+- kind: project-relative
+  target: copilot
+  value: .github/agents/principal-software-engineer.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/principal-software-engineer.agent.md
+  active_owner: github/awesome-copilot/agents/principal-software-engineer.agent.md
+  content_hash: sha256:f0153bece9f3d0f87a9693f9b2a88e22756c156a727fe4dfc398cebb44d49185
+- kind: project-relative
+  target: copilot
+  value: .github/agents/se-gitops-ci-specialist.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/se-gitops-ci-specialist.agent.md
+  active_owner: github/awesome-copilot/agents/se-gitops-ci-specialist.agent.md
+  content_hash: sha256:8ca4679e0e55f39ecadc50834354a8d9ea7162b1ca1cdd13521ed59717148a76
+- kind: project-relative
+  target: copilot
+  value: .github/agents/tdd-green.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/tdd-green.agent.md
+  active_owner: github/awesome-copilot/agents/tdd-green.agent.md
+  content_hash: sha256:4fc9b0de32880d56ffdba6127ed286ea435f9f568091eb6fb8f794878fa7e18c
+- kind: project-relative
+  target: copilot
+  value: .github/agents/tdd-red.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/tdd-red.agent.md
+  active_owner: github/awesome-copilot/agents/tdd-red.agent.md
+  content_hash: sha256:b7eb397e9afec0414c4539952004c79ab0ae2e8cacee908a02e6265830c07898
+- kind: project-relative
+  target: copilot
+  value: .github/agents/tdd-refactor.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/tdd-refactor.agent.md
+  active_owner: github/awesome-copilot/agents/tdd-refactor.agent.md
+  content_hash: sha256:4b1826279cb527534b6c0bcc54710d636bf870ab73da429f6f5cabdc085c5792
+- kind: project-relative
+  target: copilot
+  value: .github/agents/terraform.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/agents/terraform.agent.md
+  active_owner: github/awesome-copilot/agents/terraform.agent.md
+  content_hash: sha256:611ccecc51541afe3ce8b4b2c9ef7a99cf7e15558523aac23855b44eeeba2ed1
+- kind: project-relative
+  target: copilot
+  value: .github/instructions/kubernetes-deployment-best-practices.instructions.md
+  runtime: null
+  scope: project
+  owners:
+  - github/awesome-copilot/instructions/kubernetes-deployment-best-practices.instructions.md
+  active_owner: github/awesome-copilot/instructions/kubernetes-deployment-best-practices.instructions.md
+  content_hash: sha256:0aa8ddf92cb0534b373a987dd3b1e7f39338fcc9b18cb9c7a7d002aa8780bc09

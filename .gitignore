@@ -5,3 +5,9 @@
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
+# roborev snapshots
+/.roborev/
+
+
+# APM dependencies
+apm_modules/

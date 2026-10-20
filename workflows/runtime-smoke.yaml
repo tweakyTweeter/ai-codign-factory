@@ -1,0 +1,28 @@
+workflow:
+  name: factory-runtime-smoke
+  description: Deterministic external-runtime probe; no agent inference or writes.
+  entry_point: go_runtime
+  limits:
+    max_iterations: 3
+    timeout_seconds: 30
+
+agents:
+  - name: go_runtime
+    type: script
+    command: go
+    args: ["version"]
+    timeout: 10
+    routes:
+      - to: succeeded
+        when: "{{ output.exit_code == 0 }}"
+      - to: failed
+  - name: succeeded
+    type: terminate
+    status: success
+    reason: Go runtime is available in the workflow working directory.
+    output_template:
+      runtime: "{{ go_runtime.output.stdout }}"
+  - name: failed
+    type: terminate
+    status: failed
+    reason: Go runtime probe failed.

@@ -1,0 +1,23 @@
+name: ai-coding-factory
+version: 1.0.0
+targets:
+  - copilot
+dependencies:
+  apm:
+    - github/awesome-copilot/agents/ai-team-producer.agent.md
+    - github/awesome-copilot/agents/ai-team-dev.agent.md
+    - github/awesome-copilot/agents/ai-team-qa.agent.md
+    - github/awesome-copilot/agents/agent-governance-reviewer.agent.md
+    - github/awesome-copilot/agents/api-architect.agent.md
+    - github/awesome-copilot/agents/debug.agent.md
+    - github/awesome-copilot/agents/devops-expert.agent.md
+    - github/awesome-copilot/agents/implementation-plan.agent.md
+    - github/awesome-copilot/agents/platform-sre-kubernetes.agent.md
+    - github/awesome-copilot/agents/postgresql-dba.agent.md
+    - github/awesome-copilot/agents/principal-software-engineer.agent.md
+    - github/awesome-copilot/agents/se-gitops-ci-specialist.agent.md
+    - github/awesome-copilot/agents/tdd-green.agent.md
+    - github/awesome-copilot/agents/tdd-red.agent.md
+    - github/awesome-copilot/agents/tdd-refactor.agent.md
+    - github/awesome-copilot/agents/terraform.agent.md
+    - github/awesome-copilot/instructions/kubernetes-deployment-best-practices.instructions.md
