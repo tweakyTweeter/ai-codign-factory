@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"testing"
 )
@@ -11,17 +12,23 @@ func TestExampleConfigs_StayCompatibleWithParser(t *testing.T) {
 			t.Fatalf("example %s: %v", name, err)
 		}
 	}
-	for _, role := range []string{"producer", "dev", "qa", "review"} {
-		data, err := readBounded(filepath.Join("..", "..", "examples", role+"-policy.json"))
+	policies, err := filepath.Glob(filepath.Join("..", "..", "examples", "*-policy.json"))
+	if err != nil || len(policies) == 0 {
+		t.Fatalf("no example policies: %v", err)
+	}
+	for _, path := range policies {
+		data, err := readBounded(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var p CopilotPolicy
-		if err := decodeStrict(data, &p); err != nil {
+		var probe struct {
+			Role string `json:"role"`
+		}
+		if err := json.Unmarshal(data, &probe); err != nil {
 			t.Fatal(err)
 		}
-		if err := validatePolicy(p, role); err != nil {
-			t.Fatalf("example policy %s: %v", role, err)
+		if _, err := LoadPhasePolicy(data, probe.Role); err != nil {
+			t.Fatalf("example policy %s: %v", path, err)
 		}
 	}
 }
