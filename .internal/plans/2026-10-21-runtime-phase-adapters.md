@@ -25,7 +25,7 @@ Policy v2 adds `runtime`, neutral `grants` and an optional `model`.
 - The Claude child env is exactly: `PATH`, `HOME`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, `LANG`, `LC_*`, `TERM`, and `CLAUDE_CONFIG_DIR` if it is set.
 - Claude tools: `Read`, `Grep` and `Glob`, plus `Edit` and `Write` for Dev only. Every allow rule is path-scoped with the `//` absolute prefix. `Bash`, `WebFetch`, `WebSearch`, `Agent`, `NotebookEdit` and MCP tools are never granted.
 - Built-in plugin allowlist: `cc-plugin-agents-md@builtin`, `cc-plugin-telemetry@builtin`, `cc-plugin-plugin-authoring@builtin`.
-- `model` pattern: `^[A-Za-z0-9._-]{1,64}$`. The Copilot driver rejects a v2 policy that sets `model`.
+- `model` pattern: `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` (first character a letter or digit, so a value can never be parsed as a flag). The Copilot driver rejects a v2 policy that sets `model`.
 - `failure_reason` values: `usage_limit`, `timeout`, `isolation_mismatch`, `stream_invalid`, `contract`, `policy`.
 - The adapter never retries. Every failure fails closed.
 - Quality gates for every task: `go vet ./...`, `test -z "$(gofmt -l .)"`, `git diff --check`, and `GORACE=atexit_sleep_ms=0 go test -race -timeout 15m ./...`.
@@ -390,7 +390,7 @@ type policyV2 struct {
 	Model         string   `json:"model"`
 }
 
-var modelPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+var modelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // LoadPhasePolicy decodes a v1 (Copilot) or v2 (runtime-neutral) policy and
 // validates it against the controller-assigned role. Grants are explicit
@@ -439,7 +439,7 @@ func validateV2(p policyV2, role string) error {
 		return errors.New("unknown adapter role")
 	}
 	if p.Model != "" && !modelPattern.MatchString(p.Model) {
-		return errors.New("model must match ^[A-Za-z0-9._-]{1,64}$")
+		return errors.New("model must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 	}
 	if p.Model != "" && p.Runtime == "copilot" {
 		return errors.New("the copilot runtime does not support model selection")

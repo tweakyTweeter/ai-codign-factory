@@ -77,3 +77,55 @@ func TestLoadPhasePolicy_WriteOnQaFailsForWrite(t *testing.T) {
 		t.Fatalf("expected write rejection, got: %v", err)
 	}
 }
+
+func TestLoadPhasePolicy_ModelPattern(t *testing.T) {
+	long64 := "a" + strings.Repeat("b", 63)
+	for model, ok := range map[string]bool{
+		"-p": false, "--dangerously-skip-permissions": false, ".hidden": false, "_x": false,
+		" ": false, long64 + "c": false,
+		"opus": true, "claude-sonnet-5-5": true, "a": true, long64: true,
+	} {
+		_, err := LoadPhasePolicy(v2JSON(t, func(m map[string]any) { m["model"] = model }), "dev")
+		if (err == nil) != ok {
+			t.Errorf("model %q: accepted=%v want %v (%v)", model, err == nil, ok, err)
+		}
+	}
+}
+
+func TestLoadPhasePolicy_EdgeCases(t *testing.T) {
+	reject := map[string]struct {
+		body string
+		role string
+	}{
+		"duplicate version key":  {`{"version":2,"version":2,"runtime":"claude","executable":"/a/c","role":"dev","agent":"factory-dev","source_profile":"/a/p.md","grants":["read"]}`, "dev"},
+		"case-variant key":       {`{"version":2,"runtime":"claude","executable":"/a/c","role":"dev","agent":"factory-dev","source_profile":"/a/p.md","Grants":["read"]}`, "dev"},
+		"grants null":            {`{"version":2,"runtime":"claude","executable":"/a/c","role":"dev","agent":"factory-dev","source_profile":"/a/p.md","grants":null}`, "dev"},
+		"v1 body with version 2": {`{"version":2,"executable":"/a/c","role":"qa","agent":"qa","source_profile":"/a/p.md","available_tools":["view"],"allow_tools":[]}`, "qa"},
+		"v2 body with version 1": {`{"version":1,"runtime":"claude","executable":"/a/c","role":"dev","agent":"factory-dev","source_profile":"/a/p.md","grants":["read"]}`, "dev"},
+		"specialist write":       {`{"version":2,"runtime":"claude","executable":"/a/c","role":"specialist","agent":"s","source_profile":"/a/p.md","grants":["read","write"]}`, "specialist"},
+	}
+	for name, tc := range reject {
+		t.Run("reject "+name, func(t *testing.T) {
+			if _, err := LoadPhasePolicy([]byte(tc.body), tc.role); err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+	t.Run("whitespace model", func(t *testing.T) {
+		if _, err := LoadPhasePolicy(v2JSON(t, func(m map[string]any) { m["model"] = " " }), "dev"); err == nil {
+			t.Fatal("accepted")
+		}
+	})
+	t.Run("specialist read accepted", func(t *testing.T) {
+		b := `{"version":2,"runtime":"claude","executable":"/a/c","role":"specialist","agent":"s","source_profile":"/a/p.md","grants":["read"]}`
+		if _, err := LoadPhasePolicy([]byte(b), "specialist"); err != nil {
+			t.Fatal(err)
+		}
+	})
+	t.Run("copilot v2 without model", func(t *testing.T) {
+		p, err := LoadPhasePolicy(v2JSON(t, func(m map[string]any) { m["runtime"] = "copilot"; m["role"] = "qa"; m["grants"] = []string{"read"} }), "qa")
+		if err != nil || p.Runtime != "copilot" || p.Copilot != nil {
+			t.Fatalf("%+v %v", p, err)
+		}
+	})
+}

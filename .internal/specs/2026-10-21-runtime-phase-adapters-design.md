@@ -195,7 +195,7 @@ Validation (strict decode; unknown fields rejected):
 - `grants` must be non-empty, contain no duplicates, and use only `read` and `write`.
 - `grants` must include `read`.
 - `write` is allowed only when the role is `dev`.
-- `model` is optional and must match `^[A-Za-z0-9._-]{1,64}$`. Claude passes it as `--model`; the Copilot
+- `model` is optional and must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`. Claude passes it as `--model`; the Copilot
   driver rejects a v2 policy that sets it instead of silently ignoring it. When it is omitted, Claude uses the account
   default. Either way, the model actually used, read from the stream's `system/init` event, is recorded in
   `adapter.json`. The example QA and Review policies pin a model.

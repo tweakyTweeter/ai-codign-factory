@@ -1,8 +1,8 @@
 package factory
 
 import (
-	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -16,19 +16,29 @@ func TestExampleConfigs_StayCompatibleWithParser(t *testing.T) {
 	if err != nil || len(policies) == 0 {
 		t.Fatalf("no example policies: %v", err)
 	}
+	covered := map[string]bool{}
 	for _, path := range policies {
 		data, err := readBounded(path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		var probe struct {
-			Role string `json:"role"`
+		role := strings.TrimSuffix(filepath.Base(path), "-policy.json")
+		if i := strings.LastIndex(role, "-"); i >= 0 {
+			role = role[i+1:]
 		}
-		if err := json.Unmarshal(data, &probe); err != nil {
-			t.Fatal(err)
+		switch role {
+		case "producer", "dev", "qa", "review", "specialist":
+		default:
+			t.Fatalf("example %s: role %q not derivable from filename", path, role)
 		}
-		if _, err := LoadPhasePolicy(data, probe.Role); err != nil {
+		covered[role] = true
+		if _, err := LoadPhasePolicy(data, role); err != nil {
 			t.Fatalf("example policy %s: %v", path, err)
+		}
+	}
+	for _, r := range []string{"producer", "dev", "qa", "review"} {
+		if !covered[r] {
+			t.Errorf("no example policy for role %s", r)
 		}
 	}
 }

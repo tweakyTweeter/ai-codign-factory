@@ -32,7 +32,7 @@ type policyV2 struct {
 	Model         string   `json:"model"`
 }
 
-var modelPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+var modelPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 
 // LoadPhasePolicy decodes a v1 (Copilot) or v2 (runtime-neutral) policy and
 // validates it against the controller-assigned role. Grants are explicit
@@ -81,7 +81,7 @@ func validateV2(p policyV2, role string) error {
 		return errors.New("unknown adapter role")
 	}
 	if p.Model != "" && !modelPattern.MatchString(p.Model) {
-		return errors.New("model must match ^[A-Za-z0-9._-]{1,64}$")
+		return errors.New("model must match ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 	}
 	if p.Model != "" && p.Runtime == "copilot" {
 		return errors.New("the copilot runtime does not support model selection")
