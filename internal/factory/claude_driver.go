@@ -210,7 +210,3 @@ func (claudeDriver) Argv(p PhasePolicy, in LaunchInputs) []string {
 func (claudeDriver) Final(raw []byte, in LaunchInputs, out *PhaseOutcome) (string, error) {
 	return claudeFinal(raw, in, out)
 }
-
-func (claudeDriver) PostRun(string, map[string]string, *PhaseOutcome) error {
-	return errors.New("claude postrun not implemented")
-}
