@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 )
 
 // claudeProjectsDir is where Claude keeps per-working-directory state:
@@ -31,8 +32,8 @@ func claudeProjectsDir() (string, error) {
 // removeEmptyTree removes a directory tree that contains nothing but
 // directories. It never follows symlinks (WalkDir uses Lstat), and any entry
 // that is not a directory, a symlink included, fails closed before anything
-// is removed. Removal is depth-first with os.Remove, which refuses non-empty
-// directories, so a file appearing mid-walk also fails closed. Never replace
+// is removed. Removal is depth-first with rmdir, which refuses non-empty
+// directories and non-directories, so a file appearing mid-walk also fails closed. Never replace
 // this with os.RemoveAll: it runs under the user's real Claude config dir.
 func removeEmptyTree(path string) error {
 	var dirs []string
@@ -57,7 +58,7 @@ func removeEmptyTree(path string) error {
 		if !fi.IsDir() {
 			return fmt.Errorf("%s changed type during removal", dirs[i])
 		}
-		if err := os.Remove(dirs[i]); err != nil {
+		if err := removeDirOnly(dirs[i]); err != nil {
 			return err
 		}
 	}
@@ -97,6 +98,9 @@ func (claudeDriver) PostRun(launch string, before map[string]string, out *PhaseO
 		}
 		errs = append(errs, err)
 	}
+	if err := checkLaunchPathLength(launch); err != nil {
+		fail(err)
+	}
 	after, err := treeManifest(launch)
 	if err != nil {
 		fail(err)
@@ -124,4 +128,29 @@ func (claudeDriver) PostRun(launch string, before map[string]string, out *PhaseO
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// maxSanitisedProjectName is the longest sanitised project name Claude is
+// known to keep verbatim; longer names may be truncated and hashed, which the
+// suffix match could not recognise.
+const maxSanitisedProjectName = 200
+
+// removeDirOnly removes an empty directory with rmdir(2). Unlike os.Remove it
+// never falls back to unlink, so a file or symlink swapped in after the Lstat
+// check can never be deleted. The package is darwin/linux only (wait_*.go).
+func removeDirOnly(path string) error { return syscall.Rmdir(path) }
+
+// checkLaunchPathLength fails closed when the launch path, as given or with
+// symlinks resolved, would yield a projects entry name Claude may shorten.
+func checkLaunchPathLength(launch string) error {
+	paths := []string{launch}
+	if resolved, err := filepath.EvalSymlinks(launch); err == nil && resolved != launch {
+		paths = append(paths, resolved)
+	}
+	for _, p := range paths {
+		if len(sanitiseProjectName(p)) > maxSanitisedProjectName {
+			return fmt.Errorf("launch path %q is too long to audit Claude residue (%d > %d)", p, len(sanitiseProjectName(p)), maxSanitisedProjectName)
+		}
+	}
+	return nil
 }
