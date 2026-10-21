@@ -207,8 +207,8 @@ func (claudeDriver) Argv(p PhasePolicy, in LaunchInputs) []string {
 	return append(argv, "--add-dir", in.Worktree, "--add-dir", in.Inputs)
 }
 
-func (claudeDriver) Final([]byte, LaunchInputs, *PhaseOutcome) (string, error) {
-	return "", errors.New("claude final not implemented")
+func (claudeDriver) Final(raw []byte, in LaunchInputs, out *PhaseOutcome) (string, error) {
+	return claudeFinal(raw, in, out)
 }
 
 func (claudeDriver) PostRun(string, map[string]string, *PhaseOutcome) error {
