@@ -17,7 +17,12 @@ factory review --repo /path/to/repo --run RUN_ID
 factory review-publish --repo /path/to/repo --run RUN_ID
 factory review-sync --repo /path/to/repo --run RUN_ID
 factory integrate --repo /path/to/target-checkout --run RUN_ID
+factory decisions await --repo /path/to/repo --ids DECISION_ID[,DECISION_ID...] [--poll 15s] [--timeout 0]
 ```
+
+`decisions await` is read-only: it waits until each listed human decision bead
+is answered in Scotty Needs You and prints the comments. Used by intake; see
+[intake workflow](../docs/intake-workflow.md).
 
 Flags follow the command. JSON results are written to stdout (including a run
 snapshot on run failure), diagnostics to stderr. Exit codes: 0 success, 1

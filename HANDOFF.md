@@ -1,0 +1,190 @@
+# AI Coding Factory — Agent Handoff
+
+_Last updated: 2026-10-21. Read this first, then `AGENTS.md`, `README.md`, and `docs/`._
+
+## 1. What this is
+
+This is a **local-first, human-supervised AI coding factory** written in Go.
+
+- It takes one **Beads** (`bd`) task.
+- It runs that task in an **isolated Git worktree**, in sequence:
+  1. Producer
+  2. Dev
+  3. deterministic checks
+  4. independent QA
+  5. review, using Copilot specialist phases.
+- It records everything in a **SQLite journal**.
+- It publishes the candidate for **human approval in Scotty**.
+- It integrates locally only after explicit approval, using a conservative merge.
+
+The latest addition is a **skill-driven intake stage**. Before the pipeline runs, it turns a vague request into an approved spec and a set of Beads tickets.
+
+Conventions (must keep):
+- Use Go for backend code and Beads for all task tracking (`bd ready`, `bd update --claim`, `bd close`).
+- Do not commit, push or run `bd dolt push` unless the user explicitly asks.
+- Use the commit trailer `Co-authored-by: Copilot` with no email address.
+- Never overwrite APM-managed `.github/agents` / `apm_modules`, or existing skills. Augment them instead.
+- Product code always calls `bd` with `--sandbox`.
+
+## 2. Architecture
+
+```
+                         ┌───────────────────────────────────────────┐
+  User request ───────►  │  /factory-intake skill (Copilot session)  │
+                         │  .agents/skills/factory-intake/SKILL.md   │
+                         │                                           │
+                         │  ai-team-producer ──draft scope/seams──┐  │
+                         │        ▲  grill-with-docs / grill-me   │  │
+                         │        └── domain-modeling,            │  │
+                         │            codebase-design             ▼  │
+                         │  Principal SW Engineer ──review──► to-spec│
+                         │                    │                      │
+                         │        "Approve spec seams" decision ─────┼──┐
+                         │                    ▼                      │  │
+                         │                to-tickets                 │  │
+                         │        "Approve ticket breakdown" ────────┼──┤
+                         │                    ▼                      │  │
+                         │  bd children: --parent EPIC               │  │
+                         │   -l ready-for-agent --deps blocked-by:X  │  │
+                         └────────────────────┬──────────────────────┘  │
+                                              │ frontier loop           │
+                                              │ (sequential)            │
+                                              ▼                         ▼
+ ┌──────────────────────── Go controller: cmd/factory ─────┐   ┌──────────────────┐
+ │ internal/cli  ── run / status / cancel / reconcile ...  │   │ Scotty (Beads UI)│
+ │                                                         │   │  "Needs You"     │
+ │ internal/factory                                        │   │  human comments  │
+ │  controller.go  ─ admission (1 run), lifecycle          │◄──┤  approve/reject  │
+ │  workflow.go    ─ phase graph                           │   └────────▲─────────┘
+ │  repo.go        ─ git worktree per run                  │            │
+ │  process.go     ─ supervised child procs (darwin/linux) │            │
+ │  adapters.go    ─ copilot / roborev phase adapters      │            │
+ │  store.go       ─ SQLite journal (runs, phases, events) │            │
+ │  integrity.go   ─ evidence seals (candidate fingerprint)│            │
+ │  human_review.go─ review-publish / review-sync ─────────┼────────────┘
+ │  integration.go ─ integrate (approved + sealed only)    │
+ │  decisions.go   ─ read-only decision waiter (bd poll)   │
+ │  beads.go       ─ bd claim/notes/close (--sandbox)      │
+ └───────┬─────────────────────────────────────────────────┘
+         │ per run
+         ▼
+ ┌─────────── isolated worktree ───────────┐      ┌──────────────────┐
+ │ Producer → Dev → checks → QA → Review   │ ───► │ candidate commit │
+ │ (Copilot agents w/ policy JSON:         │      │ + sealed evidence│
+ │  examples/*-policy.json)                │      └────────┬─────────┘
+ └─────────────────────────────────────────┘               │ human approved
+                                                           ▼
+                                            factory integrate → target checkout
+```
+
+## 3. What has been built
+
+### Committed (`f7b32ad feat(factory): add supervised coding and approved local integration`)
+
+| Feature | Where | Notes |
+|---|---|---|
+| CLI | `cmd/factory`, `internal/cli` | `init`, `doctor`, `run`, `status`, `cancel`, `reconcile`, `release`, `review`, `review-publish`, `review-sync`, `integrate`, `copilot`/`roborev` adapters |
+| SQLite run journal | `internal/factory/store.go` | Durable run, phase and event state; supports recovery and reconciliation |
+| Single-run admission and lifecycle | `controller.go` | One active run at a time; cancel, release (`--ack-orphan`) and reconcile are covered |
+| Git worktree isolation | `repo.go` | Each run gets its own worktree |
+| Supervised processes | `process.go`, `wait_darwin.go`, `wait_linux.go` | Process-group control and orphan detection |
+| Workflow engine | `workflow.go`, `examples/supervised.json` | Producer → Dev → checks → QA → review |
+| Copilot phase adapter | `adapters.go`, `copilot_inputs.go`, `examples/*-policy.json` | Per-phase tool and permission policies |
+| roborev report import | `adapters.go` | Imports canonical schema-v2 reports with an attested fingerprint |
+| Evidence integrity seals | `integrity.go` | Binds the candidate fingerprint to its evidence |
+| Scotty human approval bridge | `human_review.go`, `docs/human-approval.md` | `review-publish` creates a human gate bead; `review-sync` reads approved / rejected / not-approved |
+| Approved local integration | `integration.go` | Integrates only approved, sealed candidates, conservatively |
+| Beads integration | `beads.go` | Claim, notes and close, all with `--sandbox` |
+| Docs | `README.md`, `docs/architecture.md`, `docs/supervised-workflow.md`, `docs/agent-setup.md`, `docs/external-runtimes.md`, `examples/USAGE.md` | |
+
+### Uncommitted (Beads `ai-coding-factory-ay3`, closed; all checks green)
+
+| Feature | Where |
+|---|---|
+| `factory decisions await --repo --ids A,B [--poll 15s] [--timeout 0]`: a read-only poll of `bd show`/`bd comments`. States are `answered`, `dismissed`, `cleared-without-answer` and `pending`. Output is JSON `{decisions, all_answered}`; exit code is 0 only when every decision is answered | `internal/factory/decisions.go`, `internal/cli/decisions.go`, `cli.go` |
+| Tests that use a fake `bd`, including an assertion that the waiter makes no write calls | `internal/factory/decisions_test.go`, `cli_test.go` |
+| `/factory-intake` skill: the full intake procedure | `.agents/skills/factory-intake/SKILL.md` |
+| Tracker and domain contracts for the Matt Pocock skills (Beads-backed) | `docs/agents/issue-tracker.md`, `docs/agents/domain.md` |
+| Intake documentation and the skill-mapping table | `docs/intake-workflow.md`, plus updates to `AGENTS.md`, `README.md`, `examples/USAGE.md` and `docs/supervised-workflow.md` |
+
+Unrelated working-tree changes: the deleted `.claude/`, `.codex/`, `.cursor/` and `CLAUDE.md` files, and the untracked `.beads/showcase/`. **Leave these out of any commit** unless the user says otherwise.
+
+## 4. How to use it
+
+```bash
+go build -o "$TMPDIR/factory" ./cmd/factory     # building into /tmp has failed silently; use $TMPDIR
+F="$TMPDIR/factory"; R=/path/to/repo; C=examples/supervised.json
+
+$F init   --repo $R
+$F doctor --repo $R --config $C
+$F run    --repo $R --config $C --task <bead-id> --prompt-file task.txt
+$F status --repo $R [--run RUN_ID]
+$F review-publish --repo $R --run RUN_ID     # creates the Scotty gate
+$F review-sync    --repo $R --run RUN_ID     # poll until human_review.decision == "approved"
+$F integrate      --repo /path/to/target-checkout --run RUN_ID
+$F decisions await --repo $R --ids <decision-bead-ids>
+```
+
+To run intake from a Copilot session, use `/factory-intake <request>`. You need to restart Copilot after the skill is added.
+
+The intake stages:
+1. Creates an epic labelled `factory-intake`.
+2. Grills a Producer subagent.
+3. Has the Principal Engineer review the design.
+4. Runs `to-spec` and asks the human to approve the seams.
+5. Runs `to-tickets` and asks the human to approve the breakdown.
+6. Loops over ready children one at a time: `run` → `review-publish` → `review-sync` → `integrate`.
+
+It stops on any failure, rejection or ambiguity and never retries automatically.
+
+How human decisions work:
+- A decision is a child bead of type `decision`, labelled `human,factory-intake`.
+- The human answers by commenting in Scotty "Needs You".
+- Agents must **never** comment on decision beads, because any comment counts as the answer.
+
+Useful Beads 1.3.1 facts:
+- A Scotty answer adds a comment and removes the `human` label; the bead stays open.
+- `bd show --json` omits comments, so use `bd comments ID --json`.
+- `bd ready --parent EPIC -l ready-for-agent --unassigned --json --limit 0` returns only the ready children.
+
+How the skills map:
+- `grill-with-docs` (preferred) or `grill-me`, plus `domain-modeling` and `codebase-design`, are used during grilling.
+- `to-spec` and `to-tickets` produce the spec and the tickets.
+- `prototype` and `handoff` write only to `$TMPDIR`.
+- `wayfinder` charts a `wayfinder:map` epic and then stops.
+- `/implement` and `/implement-spec` are **deliberately excluded**. They auto-commit and use parallel branches, which conflicts with one-run admission and human-gated integration.
+
+## 5. What remains to be built
+
+### Immediate
+1. **Commit the intake work.** Commit only the files in the "Uncommitted" table above, using a conventional commit with the `Co-authored-by: Copilot` trailer. Do this only if the user authorizes it.
+2. **Install the missing skills.** `grilling` and `grill-with-docs` are not in `~/.agents/skills`; `/grill-me` only delegates to `grilling`. If you run `/setup-matt-pocock-skills`, choose tracker **"Other"** so the Beads docs are kept.
+3. **Dogfood intake end to end** on a small request. Check that:
+   - the decision beads render in Scotty Needs You;
+   - `decisions await` resumes after a comment;
+   - the frontier loop completes one child.
+
+   None of this has been tested yet.
+
+### Open Beads milestones (`bd ready`)
+| ID | Goal |
+|---|---|
+| `ai-coding-factory-yth` | **Unattended supervision and serialized integration.** Run the factory as a durable service or daemon: a queue of ready beads, restart-safe, with integrations serialized. Humans still gate review acceptance and Git integration. |
+| `ai-coding-factory-vu6` | **Live status and controls.** A Go-owned local API or dashboard that exposes phase, logs, cancellation and recovery next to Scotty. It must not take over Beads ownership or imply integration authority, and it must fail closed. |
+| `ai-coding-factory-qg6` | **Restricted native roborev execution with provenance.** A foreground restricted launch that cannot widen permissions or mutate hooks or config. It captures the canonical report with origin and freshness provenance, and encodes the verdict in the result rather than in the process exit code. |
+| `ai-coding-factory-0kk` | **Worker knowledge context and outcome capture.** Go adapters for approved source snapshots, obsidian-wiki, Memsearch and Graphify, with provenance and size bounds. No raw transcript capture. Deduplicate captures from interactive sessions and independent workers. |
+
+Suggested order: dogfood intake, then `yth`, then `vu6`, then `qg6`, then `0kk`.
+
+## 6. Validation commands
+```bash
+go vet ./... && gofmt -l . && git diff --check
+GORACE=atexit_sleep_ms=0 go test -race -timeout 15m ./...
+```
+All of these passed at handoff time.
+
+## 7. Key docs
+- `AGENTS.md`: agent rules and the `## Agent skills` block
+- `docs/architecture.md`, `docs/supervised-workflow.md`, `docs/human-approval.md`
+- `docs/intake-workflow.md`, `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
+- `examples/USAGE.md`: full command reference, worker contract, safety and recovery

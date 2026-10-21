@@ -116,6 +116,7 @@ grant; this is narrower adapter access, not host isolation.
 | Evidence seals and private Copilot input copies | Tamper-proof evidence or OS write isolation |
 | Native Scotty human gates and explicit decision sync | Automatic publication and decision watching |
 | Explicit approved-patch integration, checks and task completion | Unattended integration queue and automatic rebasing |
+| Skill-driven intake (`/factory-intake`) and `decisions await` for Needs You answers | Intake loop as a Go command; tamper-proof decision provenance |
 
 The original runner was exercised in a disposable repository with an actual Go
 worker and exact-output check, persisted review hold and duplicate rejection,
@@ -135,6 +136,7 @@ or push was made.
 - [External runtime compatibility and integration limitations](docs/external-runtimes.md)
 - [Supervised roles, evidence and permission boundaries](docs/supervised-workflow.md)
 - [Scotty human approval and candidate-bound decisions](docs/human-approval.md)
+- [Intake: grill, spec and ticket a request before running it](docs/intake-workflow.md)
 - [APM-managed specialist profiles and instructions](docs/agent-setup.md)
 
 Development checks:

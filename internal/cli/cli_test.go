@@ -164,6 +164,7 @@ func TestRun_HelpAndUsageErrors(t *testing.T) {
 		{"bogus"}, {"run"}, {"run", "--unknown"}, {"status", "unexpected"},
 		{"cancel"}, {"release", "--run", "x"}, {"release"},
 		{"review"}, {"review-publish"}, {"review-sync"}, {"integrate"},
+		{"decisions"}, {"decisions", "wait"}, {"decisions", "await"}, {"decisions", "await", "--ids", "a", "extra"},
 	} {
 		_, err := invoke(t, args...)
 		var usage *UsageError

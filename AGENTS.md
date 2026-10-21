@@ -125,3 +125,17 @@ bd prime                # Refresh Beads context
 
 **Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/core-concepts/sync-concepts.md for details and anti-patterns.
 <!-- END BEADS CODEX SETUP -->
+
+## Agent skills
+
+### Issue tracker
+
+Beads (`bd`): specs are epics, tickets are `ready-for-agent` children with native blocking edges, human decisions are `human`-labelled decision beads answered in Scotty. See `docs/agents/issue-tracker.md`.
+
+### Domain docs
+
+Single-context: `GLOSSARY.md` and `docs/adr/` at the root, created lazily. See `docs/agents/domain.md`.
+
+### Factory intake
+
+`/factory-intake <request>` grills, specs and tickets a request, then runs each ticket through the supervised factory. See `docs/intake-workflow.md`.

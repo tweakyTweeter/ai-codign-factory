@@ -3,6 +3,10 @@
 The milestone after the foreground command runner is a supervised coding loop,
 not an unattended scheduler or automatic integration service.
 
+Requests can first go through [intake](intake-workflow.md), which grills,
+specs and tickets them in Beads. Each resulting ticket then runs through this
+workflow unchanged with `factory run --task`.
+
 ## Roles
 
 | Stage | Responsibility | Write policy |

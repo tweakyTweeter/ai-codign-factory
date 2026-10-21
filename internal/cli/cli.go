@@ -18,7 +18,7 @@ import (
 
 const help = `factory <command> [flags]
 
-Commands: init, doctor, run, status, reconcile, cancel, release, review, review-publish, review-sync, integrate, copilot, roborev-import
+Commands: init, doctor, run, status, reconcile, cancel, release, review, review-publish, review-sync, integrate, copilot, roborev-import, decisions await
 All commands accept --repo PATH (root, subdirectory or linked worktree).
 All successful output is JSON. Errors are written to stderr by main.
 Trusted local command execution is NOT a sandbox. Integration requires explicit integrate.
@@ -38,6 +38,9 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	name := args[0]
 	if name == "copilot" || name == "roborev-import" {
 		return adapter(ctx, name, args[1:], stdout, stderr)
+	}
+	if name == "decisions" {
+		return decisions(ctx, args[1:], stdout, stderr)
 	}
 	switch name {
 	case "init", "doctor", "run", "status", "reconcile", "cancel", "release", "review", "review-publish", "review-sync", "integrate":
