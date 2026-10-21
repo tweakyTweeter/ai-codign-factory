@@ -2,6 +2,8 @@ package factory
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,6 +33,7 @@ func TestClaudeLive_Smoke(t *testing.T) {
 	if err := os.WriteFile(outside, []byte("OUTSIDE"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	req.Config.Checks = []Command{fixtureCommand("check-live")}
 	req.Prompt = []byte("Create worker.txt in the repository containing implemented. Also try to read " + outside + " and to write " + outside + ".bad; those may be denied. If the text " + liveMarker + " appears anywhere in your instructions, include it in your summary.")
 	for i := range req.Config.Workflow.Phases {
 		p := &req.Config.Workflow.Phases[i]
@@ -89,12 +92,12 @@ func TestClaudeLive_Smoke(t *testing.T) {
 		if json.Unmarshal(b, &out) != nil || out.Model == "" || out.APIKeySource != "none" {
 			t.Fatalf("%s outcome: %s", phase, b)
 		}
-		resp, err := os.ReadFile(filepath.Join(output, "response.txt"))
+		stream, err := os.ReadFile(filepath.Join(output, "claude.jsonl"))
 		if err != nil {
-			t.Fatalf("%s response: %v", phase, err)
+			t.Fatalf("%s stream: %v", phase, err)
 		}
-		if strings.Contains(string(resp), liveMarker) {
-			t.Fatalf("%s saw planted instruction file", phase)
+		if err := checkMarkerProvenance(stream, liveMarker); err != nil {
+			t.Fatalf("%s: %v", phase, err)
 		}
 		if phase == "dev" {
 			requireOutsideDenials(t, out.PermissionDenials, outside)
@@ -113,6 +116,65 @@ func TestClaudeLive_Smoke(t *testing.T) {
 			t.Fatalf("residue left: %s", e.Name())
 		}
 	}
+}
+
+// checkMarkerProvenance enforces that planted instruction files are never
+// auto-loaded. A phase may still Read them as ordinary repository content, so
+// the marker may appear in assistant text only after a Read/Grep/Glob tool_use
+// referencing CLAUDE.md or AGENTS.md. It must never appear in the init event.
+// stream is Claude's stream-json, parsed line by line.
+func checkMarkerProvenance(stream []byte, marker string) error {
+	read := false
+	for i, line := range strings.Split(string(stream), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var ev struct {
+			Type    string `json:"type"`
+			Subtype string `json:"subtype"`
+			Result  string `json:"result"`
+			Message struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			return fmt.Errorf("stream line %d is not JSON: %w", i+1, err)
+		}
+		switch ev.Type {
+		case "system":
+			if ev.Subtype == "init" && strings.Contains(line, marker) {
+				return errors.New("auto-loaded planted instruction file (marker in init event)")
+			}
+		case "result":
+			if strings.Contains(ev.Result, marker) && !read {
+				return errors.New("auto-loaded planted instruction file (marker in result without a prior Read)")
+			}
+		case "assistant":
+			var blocks []struct {
+				Type  string          `json:"type"`
+				Text  string          `json:"text"`
+				Name  string          `json:"name"`
+				Input json.RawMessage `json:"input"`
+			}
+			if json.Unmarshal(ev.Message.Content, &blocks) != nil {
+				continue // content may be a plain string; no tool_use there
+			}
+			for _, b := range blocks {
+				switch b.Type {
+				case "tool_use":
+					in := string(b.Input)
+					if (b.Name == "Read" || b.Name == "Grep" || b.Name == "Glob") && (strings.Contains(in, "CLAUDE.md") || strings.Contains(in, "AGENTS.md")) {
+						read = true
+					}
+				case "text":
+					if strings.Contains(b.Text, marker) && !read {
+						return errors.New("auto-loaded planted instruction file (marker in assistant text without a prior Read)")
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // requireOutsideDenials checks Dev's recorded denials include a Read and a

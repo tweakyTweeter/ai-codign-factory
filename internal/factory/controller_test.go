@@ -101,6 +101,14 @@ func fixture(mode string, args []string) int {
 		}
 		fmt.Print("check passed\n")
 		return 0
+	case "check-live":
+		// Live Claude smoke test: a real model may end the file with a newline.
+		b, err := os.ReadFile("worker.txt")
+		if err != nil || strings.TrimSpace(string(b)) != "implemented" {
+			return 24
+		}
+		fmt.Print("check passed\n")
+		return 0
 	case "fail":
 		fmt.Fprintln(os.Stderr, "intentional fixture failure")
 		return 7
