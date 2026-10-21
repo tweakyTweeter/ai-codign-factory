@@ -29,6 +29,12 @@ func TestCheckMarkerProvenance(t *testing.T) {
 		{"marker in init", []string{initBad, read}, true},
 		{"result only without read", []string{init, result}, true},
 		{"malformed line", []string{init, "not json"}, true},
+		{"message is a string", []string{init, `{"type":"user","message":"some string"}`, clean}, false},
+		{"message is null", []string{init, `{"type":"assistant","message":null}`, clean}, false},
+		{"assistant message is a string", []string{init, `{"type":"assistant","message":"hi"}`}, false},
+		{"unknown event with nested objects", []string{init, `{"type":"stream_event","event":{"a":{"b":[1,{"c":"d"}]}},"message":{"content":"x"}}`, clean}, false},
+		{"result is not a string", []string{init, `{"type":"result","result":{"k":1}}`}, false},
+		{"marker after read despite variant events", []string{init, `{"type":"user","message":"s"}`, read, text}, false},
 	} {
 		err := checkMarkerProvenance([]byte(strings.Join(tc.lines, "\n")+"\n"), m)
 		if (err != nil) != tc.bad {

@@ -130,12 +130,10 @@ func checkMarkerProvenance(stream []byte, marker string) error {
 			continue
 		}
 		var ev struct {
-			Type    string `json:"type"`
-			Subtype string `json:"subtype"`
-			Result  string `json:"result"`
-			Message struct {
-				Content json.RawMessage `json:"content"`
-			} `json:"message"`
+			Type    string          `json:"type"`
+			Subtype string          `json:"subtype"`
+			Result  json.RawMessage `json:"result"`
+			Message json.RawMessage `json:"message"`
 		}
 		if err := json.Unmarshal([]byte(line), &ev); err != nil {
 			return fmt.Errorf("stream line %d is not JSON: %w", i+1, err)
@@ -146,17 +144,27 @@ func checkMarkerProvenance(stream []byte, marker string) error {
 				return errors.New("auto-loaded planted instruction file (marker in init event)")
 			}
 		case "result":
-			if strings.Contains(ev.Result, marker) && !read {
+			var res string
+			if json.Unmarshal(ev.Result, &res) != nil {
+				continue // variant shape: nothing to interpret
+			}
+			if strings.Contains(res, marker) && !read {
 				return errors.New("auto-loaded planted instruction file (marker in result without a prior Read)")
 			}
 		case "assistant":
+			var msg struct {
+				Content json.RawMessage `json:"content"`
+			}
+			if json.Unmarshal(ev.Message, &msg) != nil {
+				continue // message may be a string or null; nothing to interpret
+			}
 			var blocks []struct {
 				Type  string          `json:"type"`
 				Text  string          `json:"text"`
 				Name  string          `json:"name"`
 				Input json.RawMessage `json:"input"`
 			}
-			if json.Unmarshal(ev.Message.Content, &blocks) != nil {
+			if json.Unmarshal(msg.Content, &blocks) != nil {
 				continue // content may be a plain string; no tool_use there
 			}
 			for _, b := range blocks {
