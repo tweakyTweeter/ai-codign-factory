@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -90,6 +91,14 @@ func copilotFixture() int {
 		b, _ := json.Marshal(v)
 		content = string(b)
 	}
+	var copilotEnv []string
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "COPILOT_") {
+			copilotEnv = append(copilotEnv, entry)
+		}
+	}
+	sort.Strings(copilotEnv)
+	fmt.Fprintf(os.Stderr, "fixture env: %s\n", strings.Join(copilotEnv, " "))
 	fmt.Fprintln(os.Stderr, "fixture diagnostic, deliberately not JSON")
 	event := map[string]any{"type": "assistant.message", "data": map[string]any{"phase": "final_answer", "content": content}}
 	b, _ := json.Marshal(event)
