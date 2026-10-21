@@ -101,10 +101,11 @@ configuration. Global extensions can still load.
 
 Phases can also run through Claude Code with `factory agent` and a v2 policy
 (`examples/claude-*-policy.json`, `examples/supervised-claude.json`; the v2
-Copilot policies use the same schema). The Claude path is held to the same
-fail-closed standard: private launch dir, path-scoped tools, an exact
-environment allowlist, an init-event isolation check and a post-run residue
-audit. See `examples/USAGE.md` and
+Copilot policies use the same schema). The Claude path fails closed in the same
+way and adds protections the Copilot path lacks: path-scoped tools, an exact
+environment allowlist (Copilot still inherits the caller's environment; see
+`ai-coding-factory-kx1`), init-event isolation verification and a post-run
+residue audit. See `examples/USAGE.md` and
 [ADR 0001](adr/0001-claude-phase-worker-via-cli.md).
 
 This exact adapter was then exercised against real Copilot: Producer planned,

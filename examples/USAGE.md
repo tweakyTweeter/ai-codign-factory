@@ -47,8 +47,9 @@ explicit HEAD commit, on branch `factory/RUN_ID`. New runs create it at
 (`/x/proj/.git` gives `/x/proj.factory-runs`), not under `.git`, because Claude
 Code refuses writes under `.git`. The `.factory-runs` root must be a real
 directory owned by you with mode 0700 or stricter, and not a symlink;
-otherwise the run refuses and never repairs it. Run state, journal and evidence
-stay in `.git/factory/runs/<id>`. Existing runs keep their stored worktree
+otherwise the run refuses and never repairs it. The journal is
+`<common-git-dir>/factory/runs.sqlite` and per-run evidence stays in
+`.git/factory/runs/<id>`. Existing runs keep their stored worktree
 paths, and the factory never deletes worktrees. It receives these variables:
 
 * `FACTORY_RUN_ID`: durable identifier
@@ -259,7 +260,8 @@ or that is not absolute and canonical, or is `/`, is refused with
 `failure_reason=policy`; paths are never escaped. Consequence: a repository
 whose path, or whose parent directory's path (because run worktrees live in
 `<parent>/<repo>.factory-runs/`), contains such characters cannot run Claude
-phases.
+phases. The same limit applies to `TMPDIR`: the private inputs and the profile
+snapshot live under the temp launch dir.
 
 The child environment is an exact allowlist: `PATH HOME USER LOGNAME SHELL
 TMPDIR LANG LC_* TERM`, plus `CLAUDE_CONFIG_DIR` if set. Dropped variable names
@@ -281,7 +283,7 @@ pre-run manifest, and Claude's per-launch-dir state under
 `~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) is checked. Entries
 are matched by the sanitised launch base name, either exactly or as the
 `-<launch-base>` suffix. An entry holding only empty directories is removed
-with `rmdir`, never recursively; any file or symlink fails the phase and the
+one empty directory at a time with `rmdir` (never `RemoveAll`); any file or symlink fails the phase and the
 entry is kept and listed as residue. A launch path whose sanitised name is
 over 200 characters fails closed because Claude may shorten such names.
 
@@ -292,19 +294,22 @@ record outcomes (Claude), because `adapter.json` is sealed before the run:
 Each permission denial records the `tool` and target `path` only, never file
 contents or patterns. `failure_reason` is one of `usage_limit`, `timeout`,
 `isolation_mismatch`, `stream_invalid`, `contract`, `policy`. The first reason
-set wins, in this order of precedence: isolation evidence (integrity or seal
-violations, PostRun findings, init mismatches) outranks stream classification;
-truncated output is `stream_invalid`; an unsuccessful or incomplete result is
-`usage_limit` when a rate limit was seen, otherwise `stream_invalid`; a failure
-with no more specific reason is `contract`. `timeout` is recorded only when the
+set wins. `policy` and `timeout` are set first. Then isolation evidence
+(integrity or seal violations, PostRun findings, init mismatches) outranks
+stream classification; truncated stdout/stderr is `stream_invalid`; an
+unsuccessful or incomplete result is `usage_limit` if a rate limit was seen,
+else `stream_invalid`. Any other failure during or around the run defaults to
+`isolation_mismatch`. `contract` covers setup failures (for example
+`claude --version`) and role-contract failures after a clean run. `timeout` is recorded only when the
 adapter's own context ends before the child exits (a controller timeout kills
 the adapter and appears in the controller's evidence). The adapter never
 retries. See `docs/adr/0001-claude-phase-worker-via-cli.md`.
 
 `FACTORY_LIVE_CLAUDE=1 go test ./internal/factory -run ClaudeLive -count=1 -v`
 is an opt-in smoke test against the real CLI. It uses subscription quota
-(haiku) and the real HOME, only checking read-only that no residue is left. It
-is skipped by default.
+(haiku) and the real HOME. The test itself only reads `~/.claude/projects` to
+check that no residue is left; the adapter's PostRun may `rmdir` empty launch
+entries there. It is skipped by default.
 
 `factory roborev-import --report PATH --fingerprint REVIEWED_HASH` is an
 alternative review phase adapter. It accepts canonical roborev v0.71.0 schema

@@ -59,7 +59,7 @@ Conventions (must keep):
  │  workflow.go    ─ phase graph                           │   └────────▲─────────┘
  │  repo.go        ─ git worktree per run                  │            │
  │  process.go     ─ supervised child procs (darwin/linux) │            │
- │  runtime.go     ─ Driver interface, RunPhase (copilot,  │
+ │  runtime.go     ─ Driver interface, RunPhase (copilot,  │            │
  │                   claude), roborev import in adapters.go│            │
  │  store.go       ─ SQLite journal (runs, phases, events) │            │
  │  integrity.go   ─ evidence seals (candidate fingerprint)│            │
@@ -109,7 +109,7 @@ Conventions (must keep):
 | Tracker and domain contracts for the Matt Pocock skills (Beads-backed) | `docs/agents/issue-tracker.md`, `docs/agents/domain.md` |
 | Intake documentation and the skill-mapping table | `docs/intake-workflow.md`, plus updates to `AGENTS.md`, `README.md`, `examples/USAGE.md` and `docs/supervised-workflow.md` |
 
-### Committed: runtime-neutral phase adapters (branch `feat/runtime-phase-adapters`, Beads epic `ai-coding-factory-6nq`, Claude slice complete; Task 11 bead `ai-coding-factory-sur`)
+### Committed: runtime-neutral phase adapters (branch `feat/runtime-phase-adapters`, Beads epic `ai-coding-factory-68m` (feature bead `ai-coding-factory-6nq`), Claude slice complete; Task 11 bead `ai-coding-factory-sur`)
 
 | Change | Where |
 |---|---|
@@ -126,7 +126,7 @@ Conventions (must keep):
 | Opt-in live smoke test: `FACTORY_LIVE_CLAUDE=1 go test ./internal/factory -run ClaudeLive -count=1 -v` (subscription quota, real HOME) | `internal/factory/claude_live_test.go` |
 | Docs and ADR | `examples/USAGE.md`, `docs/architecture.md`, `docs/adr/0001-claude-phase-worker-via-cli.md` |
 
-Known limit: a repository whose path, or whose parent directory's path, contains whitespace or glob characters (`* ? [ ] { } ( ) ,`, backslash) cannot run Claude phases (`failure_reason=policy`).
+Known limit: a repository whose path, or whose parent directory's path (or `TMPDIR`), contains whitespace or glob characters (`* ? [ ] { } ( ) ,`, backslash) cannot run Claude phases (`failure_reason=policy`).
 
 `816ac62 chore: remove per-tool agent configs and add beads showcase` removed `CLAUDE.md` and the `.claude/`, `.codex/` and `.cursor/` hook files, and added `.beads/showcase/`.
 
@@ -203,7 +203,7 @@ How the skills map:
 | `ai-coding-factory-yth` | **Unattended supervision and serialized integration.** Run the factory as a durable service or daemon: a queue of ready beads, restart-safe, with integrations serialized. Humans still gate review acceptance and Git integration. |
 | `ai-coding-factory-vu6` | **Live status and controls.** A Go-owned local API or dashboard that exposes phase, logs, cancellation and recovery next to Scotty. It must not take over Beads ownership or imply integration authority, and it must fail closed. |
 | `ai-coding-factory-qg6` | **Restricted native roborev execution with provenance.** A foreground restricted launch that cannot widen permissions or mutate hooks or config. It captures the canonical report with origin and freshness provenance, and encodes the verdict in the result rather than in the process exit code. |
-| `ai-coding-factory-6nq` | **Runtime adapters.** Claude slice is done (see section 3). Remaining: `codex exec` and `opencode run` drivers behind the same `Driver` interface (follow-up beads to be filed; none exists yet). |
+| `ai-coding-factory-6nq` | **Runtime adapters.** Claude slice is done (see section 3). Remaining: `codex exec` and `opencode run` drivers behind the same `Driver` interface (Claude slice delivered under epic `68m`; `6nq` stays open for the `codex exec` / `opencode run` drivers behind the same `Driver` interface; minor spec follow-up `ai-coding-factory-68m.1` is open, and the ADR knowledge bead is `ai-coding-factory-x20`). |
 | `ai-coding-factory-kx1` | **Copilot env allowlist.** Deferred by design: the Copilot child still inherits the caller's environment, unlike Claude's exact allowlist. |
 | `ai-coding-factory-0kk` | **Worker knowledge context and outcome capture.** Go adapters for approved source snapshots, obsidian-wiki, Memsearch and Graphify, with provenance and size bounds. No raw transcript capture. Deduplicate captures from interactive sessions and independent workers. |
 
