@@ -18,6 +18,11 @@ func isClaudeFixtureInvocation(args []string) bool {
 	return len(args) > 2 && args[1] == "-p" && strings.Contains(args[2], "supervised coding loop")
 }
 
+// fixtureEnvAllow is deliberately independent of production's claudeEnvAllow,
+// so a bad entry added there is caught here.
+var fixtureEnvAllow = map[string]bool{"PATH": true, "HOME": true, "USER": true, "LOGNAME": true,
+	"SHELL": true, "TMPDIR": true, "LANG": true, "TERM": true, "CLAUDE_CONFIG_DIR": true}
+
 func flagValue(args []string, name string) string {
 	for i, a := range args {
 		if a == name && i+1 < len(args) {
@@ -36,7 +41,7 @@ func claudeFixture() int {
 	}
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if !claudeEnvAllow[key] && !strings.HasPrefix(key, "LC_") {
+		if !fixtureEnvAllow[key] && !strings.HasPrefix(key, "LC_") {
 			fmt.Fprintln(os.Stderr, "fixture saw non-allowlisted env", key)
 			return 90
 		}
@@ -63,8 +68,8 @@ func claudeFixture() int {
 		return os.WriteFile(path, []byte(content), 0600) == nil
 	}
 	switch mode {
-	case "env-leak":
-		fmt.Fprintln(os.Stderr, "fixture simulates a non-allowlisted env variable")
+	case "exit-nonzero":
+		fmt.Fprintln(os.Stderr, "fixture simulates a failed exec before any stream")
 		return 90
 	case "tamper-input":
 		if !write(filepath.Join(cwd, "inputs", "prompt.txt"), "changed") {

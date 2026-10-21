@@ -25,6 +25,12 @@ func TestMain(m *testing.M) {
 	if isClaudeFixtureInvocation(os.Args) {
 		os.Exit(claudeFixture())
 	}
+	// A flag-shaped argv[1] that is neither a go test flag nor a recognised
+	// fixture call means dispatch drifted; never run the suite inside a phase.
+	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "-") && !strings.HasPrefix(os.Args[1], "-test.") {
+		fmt.Fprintln(os.Stderr, "unrecognised fixture invocation:", os.Args[1:])
+		os.Exit(97)
+	}
 	goleak.VerifyTestMain(m)
 }
 

@@ -102,18 +102,19 @@ func TestClaudeAdapter_PipelinePasses(t *testing.T) {
 }
 
 func TestClaudeAdapter_FailsClosed(t *testing.T) {
-	for _, tc := range []struct{ mode, role, reason string }{
-		{"blocked", "dev", "contract"},
-		{"wrong-fp", "qa", "contract"},
-		{"tamper-input", "producer", "isolation_mismatch"},
-		{"tamper-settings", "producer", "isolation_mismatch"},
-		{"launch-litter", "producer", "isolation_mismatch"},
-		{"residue-file", "producer", "isolation_mismatch"},
-		{"extra-tool", "producer", "isolation_mismatch"},
-		{"usage-limit", "producer", "usage_limit"},
-		// A failed exec has its (here empty) stream classified; see
-		// classifyRunFailure. The fixture's real env check exits 90 too.
-		{"env-leak", "producer", "stream_invalid"},
+	// msg is the distinguishing message of the one control under test, so a
+	// mode cannot stay green through some other control's failure.
+	for _, tc := range []struct{ mode, role, reason, msg string }{
+		{"blocked", "dev", "contract", "Dev did not explicitly report"},
+		{"wrong-fp", "qa", "contract", "fingerprint does not match"},
+		{"tamper-input", "producer", "isolation_mismatch", "modified private inputs"},
+		{"tamper-settings", "producer", "isolation_mismatch", "launch settings changed"},
+		{"launch-litter", "producer", "isolation_mismatch", "changed its private launch dir"},
+		{"residue-file", "producer", "isolation_mismatch", "Claude wrote global state"},
+		{"extra-tool", "producer", "isolation_mismatch", "Claude reported tools"},
+		{"usage-limit", "producer", "usage_limit", "Claude result unsuccessful"},
+		// A failed exec has its (here empty) stream classified; see classifyRunFailure.
+		{"exit-nonzero", "producer", "stream_invalid", "exit status 90"},
 	} {
 		t.Run(tc.mode, func(t *testing.T) {
 			projects := claudeEnvSetup(t)
@@ -130,6 +131,9 @@ func TestClaudeAdapter_FailsClosed(t *testing.T) {
 			log, _ := os.ReadFile(last.Log)
 			if !strings.Contains(string(log), "failure_reason="+tc.reason) {
 				t.Fatalf("want failure_reason=%s in log: %s", tc.reason, log)
+			}
+			if !strings.Contains(string(log), tc.msg) {
+				t.Fatalf("want %q (the control under test) in log: %s", tc.msg, log)
 			}
 			var outcome PhaseOutcome
 			b, _ := os.ReadFile(filepath.Join(last.OutputDir, "adapter-outcome.json"))
