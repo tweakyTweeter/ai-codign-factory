@@ -2,22 +2,57 @@ name: ai-coding-factory
 version: 1.0.0
 targets:
   - copilot
+  - claude
+  - opencode
+# Project roles in .apm/agents/ deploy to every target above. Upstream
+# awesome-copilot profiles use Copilot-only frontmatter (tool names, models)
+# that OpenCode rejects and Claude cannot honour, and the instructions say
+# "As GitHub Copilot" and would load into every Claude session, so all
+# upstream content stays Copilot-only.
 dependencies:
   apm:
-    - github/awesome-copilot/agents/ai-team-producer.agent.md
-    - github/awesome-copilot/agents/ai-team-dev.agent.md
-    - github/awesome-copilot/agents/ai-team-qa.agent.md
-    - github/awesome-copilot/agents/agent-governance-reviewer.agent.md
-    - github/awesome-copilot/agents/api-architect.agent.md
-    - github/awesome-copilot/agents/debug.agent.md
-    - github/awesome-copilot/agents/devops-expert.agent.md
-    - github/awesome-copilot/agents/implementation-plan.agent.md
-    - github/awesome-copilot/agents/platform-sre-kubernetes.agent.md
-    - github/awesome-copilot/agents/postgresql-dba.agent.md
-    - github/awesome-copilot/agents/principal-software-engineer.agent.md
-    - github/awesome-copilot/agents/se-gitops-ci-specialist.agent.md
-    - github/awesome-copilot/agents/tdd-green.agent.md
-    - github/awesome-copilot/agents/tdd-red.agent.md
-    - github/awesome-copilot/agents/tdd-refactor.agent.md
-    - github/awesome-copilot/agents/terraform.agent.md
-    - github/awesome-copilot/instructions/kubernetes-deployment-best-practices.instructions.md
+    - git: github/awesome-copilot
+      path: agents/ai-team-dev.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/ai-team-qa.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/agent-governance-reviewer.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/api-architect.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/debug.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/devops-expert.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/implementation-plan.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/platform-sre-kubernetes.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/postgresql-dba.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/se-gitops-ci-specialist.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/tdd-green.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/tdd-red.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/tdd-refactor.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: agents/terraform.agent.md
+      targets: [copilot]
+    - git: github/awesome-copilot
+      path: instructions/kubernetes-deployment-best-practices.instructions.md
+      targets: [copilot]

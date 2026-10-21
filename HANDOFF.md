@@ -24,7 +24,7 @@ Conventions (must keep):
 - Do not commit, push or run `bd dolt push` unless the user explicitly asks.
 - Use a commit trailer naming the agent that did the work (see `AGENTS.md` → Agent portability).
 - Never overwrite APM-managed `.github/agents` / `apm_modules`, or existing skills. Augment them instead.
-- Keep it agent-agnostic: shared skills in `.agents/skills/`, shared subagent roles in `.apm/agents/` (deployed to `.github/agents/` by `apm install`), links in `.claude/` and `.opencode/`; per-agent local state is gitignored.
+- Keep it agent-agnostic: shared skills in `.agents/skills/`, shared subagent roles in `.apm/agents/` (deployed by `apm install` to `.github/agents/`, `.claude/agents/`, `.opencode/agents/`), skill links in `.claude/skills/`; per-agent local state is gitignored.
 - Product code always calls `bd` with `--sandbox`.
 
 ## 2. Architecture

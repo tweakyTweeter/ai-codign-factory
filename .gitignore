@@ -12,8 +12,8 @@
 # APM dependencies
 apm_modules/
 
-# Per-agent local state (settings, memory, caches) stays untracked; only the
-# links to the shared, agent-neutral definitions in .agents/ are committed.
+# Per-agent local state (settings, memory, caches) stays untracked. Commit only
+# the APM-deployed agents and the skill links into .agents/skills/.
 .claude/*
 !.claude/skills/
 !.claude/agents/

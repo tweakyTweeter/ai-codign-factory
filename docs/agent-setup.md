@@ -1,9 +1,14 @@
-# Awesome Copilot agents in Copilot CLI
+# Agent profiles (APM)
 
-This repository uses APM to install selected upstream
-[Awesome Copilot](https://awesome-copilot.github.com/agents/) agents, including
-AI Team Producer (Remy). These are custom agent profiles, not skills or slash
-commands.
+This repository uses APM to install two kinds of custom agent profiles:
+
+- **Project roles** in `.apm/agents/` (`factory-producer`,
+  `factory-principal-engineer`), deployed to Copilot, Claude Code and
+  OpenCode.
+- **Selected upstream [Awesome Copilot](https://awesome-copilot.github.com/agents/)
+  profiles**, deployed to Copilot only.
+
+These are custom agent profiles, not skills or slash commands.
 
 ## Install
 
@@ -17,12 +22,18 @@ From the repository root:
 apm install
 ```
 
-`apm.yml` declares the selected agents under `dependencies.apm` and explicitly
-selects the `copilot` target. A top-level `apm:` list is not a dependency
+`apm.yml` selects the `copilot`, `claude` and `opencode` targets and declares
+the upstream agents under `dependencies.apm`, each restricted with
+`targets: [copilot]`. Their frontmatter uses Copilot tool names, MCP blocks and
+models (`gpt-4o`, `GPT-5`); OpenCode refuses to load its configuration when an
+agent declares `tools` as a list, and Claude cannot honour those tools or
+models. The upstream Kubernetes instructions are Copilot-only for the same
+reason: they address Copilot and would load into every Claude session. A top-level `apm:` list is not a dependency
 declaration: APM may report that everything is up to date while installing
 nothing.
 
-APM deploys profiles under `.github/agents/` and records the resolved
+APM deploys profiles under `.github/agents/` (and project roles also under
+`.claude/agents/` and `.opencode/agents/`) and records the resolved
 upstream commit and content hashes in `apm.lock.yaml`. Keep the manifest,
 lockfile, and deployed profiles in version control. `apm_modules/` is an ignored
 local dependency directory.
@@ -30,7 +41,7 @@ local dependency directory.
 To reproduce the locked installation:
 
 ```bash
-apm install --frozen --target copilot
+apm install --frozen
 ```
 
 The manifest does not pin tags or SHAs, so APM warns that dependencies are
@@ -42,22 +53,22 @@ hand-edit deployed profiles, since APM manages their content.
 ## Project-local profiles
 
 `.apm/agents/` holds this repository's own, agent-neutral roles. APM treats
-them as local primitives: `apm install` deploys them to `.github/agents/`
-alongside the upstream profiles and records them under
-`local_deployed_files` in `apm.lock.yaml`. Claude Code and OpenCode use the
-same sources through links in `.claude/agents/` and `.opencode/agents/`.
-Edit the `.apm/agents/` source (a real file, not a symlink, since APM skips
-symlinks) and rerun `apm install`; never edit the deployed copy.
+them as local primitives: `apm install` deploys them to every target and
+records them under `local_deployed_files` in `apm.lock.yaml`. Keep their
+frontmatter to fields every harness accepts (`name`, `description`,
+`mode: subagent`). Edit the `.apm/agents/` source (a real file, not a
+symlink, since APM skips symlinks) and rerun `apm install`; never edit a
+deployed copy.
 
 ## Installed profiles
 
-Use `/agent` to browse the display names. The file identifiers are:
+In Copilot, use `/agent` to browse the display names. Only the factory intake roles are also deployed to Claude Code and OpenCode. The file identifiers are:
 
 | Area | Profile identifiers |
 | --- | --- |
 | Factory intake (project-local, from `.apm/agents/`) | `factory-producer`, `factory-principal-engineer` |
-| Team | `ai-team-producer`, `ai-team-dev`, `ai-team-qa` |
-| Planning and architecture | `implementation-plan`, `api-architect`, `principal-software-engineer` |
+| Team | `ai-team-dev`, `ai-team-qa` |
+| Planning and architecture | `implementation-plan`, `api-architect` |
 | Governance and debugging | `agent-governance-reviewer`, `debug` |
 | Operations | `devops-expert`, `platform-sre-kubernetes`, `se-gitops-ci-specialist` |
 | Data and infrastructure | `postgresql-dba`, `terraform` |
@@ -98,13 +109,13 @@ copilot
 Select it with:
 
 ```text
-/agent ai-team-producer
+/agent factory-producer
 ```
 
 Alternatively, start directly with the profile:
 
 ```bash
-copilot --agent ai-team-producer
+copilot --agent factory-producer
 ```
 
 Example request:
@@ -114,11 +125,10 @@ Clarify the scope of this feature and prepare acceptance criteria and a
 handoff for implementation. Follow the repository's Beads workflow.
 ```
 
-Remy plans, clarifies scope, triages findings, and coordinates implementation
-and review. The upstream profile prohibits writing application code and running
-implementation builds or test suites. Dev and QA profiles are installed
-separately, but selecting Producer does not automatically start them or create
-an autonomous scheduler. Other profiles have their own implementation and
+The Producer drafts scope, affected modules, test seams and open
+assumptions. Its profile is read-only and prohibits writing code or speaking
+for the human. Selecting it does not start Dev or QA or create an autonomous
+scheduler; `/factory-intake` orchestrates it. Other profiles have their own implementation and
 execution roles; installing them does not execute those workflows.
 
 Existing repository instructions still apply: use Beads for durable work and

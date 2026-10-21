@@ -15,8 +15,8 @@ at the repository root:
 The procedure lives in `.agents/skills/factory-intake/SKILL.md` (linked into
 `.claude/skills/` for Claude Code). Its two subagent roles,
 `factory-producer` and `factory-principal-engineer`, live in
-`.apm/agents/`. APM deploys them to `.github/agents/` for Copilot, and
-`.claude/agents/` and `.opencode/agents/` link to the same files. The skill's
+`.apm/agents/`; `apm install` deploys them to `.github/agents/`,
+`.claude/agents/` and `.opencode/agents/`. The skill's
 "Running under different agents" table maps launching and continuing a
 subagent onto each harness. The Beads
 mapping used by the Matt Pocock engineering skills lives in

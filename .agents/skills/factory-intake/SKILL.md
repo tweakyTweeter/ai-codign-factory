@@ -25,9 +25,9 @@ steps say "launch", "continue" or "load", use your harness's mechanism:
 | Continue the same subagent | `SendMessage` to its ID | Task tool with the same session ID | Follow up in the same subagent thread | `write_agent` |
 | Load a skill | Skill tool | skill tool | Read the skill's `SKILL.md` | Skill tool |
 
-Role definitions live in `.apm/agents/` (APM deploys them to
-`.github/agents/` for Copilot; `.claude/agents/` and `.opencode/agents/`
-link to them; Codex reads the file directly):
+Role definitions live in `.apm/agents/`. `apm install` deploys them to
+`.github/agents/`, `.claude/agents/` and `.opencode/agents/`; Codex reads
+the source file directly:
 
 | Role | Name | Source |
 | --- | --- | --- |
