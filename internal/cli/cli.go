@@ -18,7 +18,7 @@ import (
 
 const help = `factory <command> [flags]
 
-Commands: init, doctor, run, status, reconcile, cancel, release, review, review-publish, review-sync, integrate, copilot, roborev-import, decisions await
+Commands: init, doctor, run, status, reconcile, cancel, release, review, review-publish, review-sync, integrate, copilot, agent, roborev-import, decisions await
 All commands accept --repo PATH (root, subdirectory or linked worktree).
 All successful output is JSON. Errors are written to stderr by main.
 Trusted local command execution is NOT a sandbox. Integration requires explicit integrate.
@@ -36,7 +36,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		return err
 	}
 	name := args[0]
-	if name == "copilot" || name == "roborev-import" {
+	if name == "copilot" || name == "agent" || name == "roborev-import" {
 		return adapter(ctx, name, args[1:], stdout, stderr)
 	}
 	if name == "decisions" {
@@ -175,7 +175,19 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		if _, err := exec.LookPath("git"); err != nil {
 			return err
 		}
-		return encode(map[string]any{"repo": repo, "config_valid": true, "sandbox": false, "notice": "executables found only; no worker/Conductor capability or success implied"})
+		runtimes := []factory.PhaseRuntime{}
+		if config.Workflow != nil {
+			for _, p := range config.Workflow.Phases {
+				pr, err := factory.InspectPhasePolicy(ctx, p.Name, p.Role, p.Command.Argv)
+				if err != nil {
+					return err
+				}
+				if pr != nil {
+					runtimes = append(runtimes, *pr)
+				}
+			}
+		}
+		return encode(map[string]any{"repo": repo, "config_valid": true, "sandbox": false, "phase_runtimes": runtimes, "notice": "executables found only; no worker/Conductor capability or success implied"})
 	case "run":
 		config, err := factory.LoadConfig(*configPath)
 		if err != nil {

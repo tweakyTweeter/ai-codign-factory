@@ -392,3 +392,46 @@ func applyRoleContract(ctx context.Context, role, result, worktree, content stri
 	}
 	return nil
 }
+
+// PhaseRuntime is the doctor's view of one policy-driven phase.
+type PhaseRuntime struct {
+	Phase      string `json:"phase"`
+	Runtime    string `json:"runtime"`
+	Executable string `json:"executable"`
+	Version    string `json:"version,omitempty"`
+}
+
+// InspectPhasePolicy validates a phase's adapter policy for doctor. It returns
+// nil for phases that are not policy-driven adapters.
+func InspectPhasePolicy(ctx context.Context, phase, role string, argv []string) (*PhaseRuntime, error) {
+	path := ""
+	for i, a := range argv {
+		if a == "--policy" && i+1 < len(argv) {
+			path = argv[i+1]
+		}
+	}
+	if path == "" {
+		return nil, nil
+	}
+	b, err := readBounded(path)
+	if err != nil {
+		return nil, fmt.Errorf("phase %s policy: %w", phase, err)
+	}
+	p, err := LoadPhasePolicy(b, role)
+	if err != nil {
+		return nil, fmt.Errorf("phase %s policy: %w", phase, err)
+	}
+	pr := &PhaseRuntime{Phase: phase, Runtime: p.Runtime, Executable: p.Executable}
+	if p.Runtime == "claude" {
+		launch, err := privateLaunchDir("factory-claude-doctor-")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(launch)
+		env, _ := claudeEnv(os.Environ())
+		if pr.Version, err = (claudeDriver{}).Version(ctx, p, launch, env, false); err != nil {
+			return nil, fmt.Errorf("phase %s: %w", phase, err)
+		}
+	}
+	return pr, nil
+}

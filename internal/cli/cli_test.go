@@ -173,3 +173,16 @@ func TestRun_HelpAndUsageErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentCommand_RequiresPolicy(t *testing.T) {
+	if _, err := invoke(t, "agent"); err == nil {
+		t.Fatal("agent without --policy accepted")
+	}
+}
+
+func TestHelpListsAgent(t *testing.T) {
+	out, err := invoke(t, "help")
+	if err != nil || !strings.Contains(out, "copilot, agent,") {
+		t.Fatalf("help: %q: %v", out, err)
+	}
+}
