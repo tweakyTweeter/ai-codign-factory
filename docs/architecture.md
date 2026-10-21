@@ -36,7 +36,7 @@ durable journal, isolated Git worktrees and external command workers.
                 |
                 v
   +-----------------------------------------------------------+
-  | Copilot workers and risk-selected profiles                 |
+  | Phase runtime drivers (Copilot, Claude), risk profiles    |
   | Producer -> plan/design -> Dev -> independent QA/review     |
   |                                                           |
   | Implementation Plan | Principal Engineer | API Architect  |
@@ -73,7 +73,7 @@ durable journal, isolated Git worktrees and external command workers.
 | Beads | Durable work items, dependencies and claims | A running worker or accepted code |
 | Go controller | Admission, attempt lifecycle, reconciliation and integration policy | LLM task reasoning |
 | SQLite journal | Local execution intent and observed outcomes | Task authority or remote distributed locking |
-| Runtime adapter | Process boundary, arguments, deadlines and evidence | A sandbox or tool authorization |
+| Runtime adapter | Process boundary, arguments, deadlines and evidence; Copilot and Claude drivers behind one runner ([ADR 0001](adr/0001-claude-phase-worker-via-cli.md)) | A sandbox or tool authorization |
 | Conductor | One task's workflow and checkpoints | Global scheduling or exactly-once side effects |
 | Copilot profiles | Role guidance and task-specific expertise | Permissions, approval or independent QA by themselves |
 | Git/worktrees | Baselines, isolated changes and integration history | Isolation from the host, network or credentials |

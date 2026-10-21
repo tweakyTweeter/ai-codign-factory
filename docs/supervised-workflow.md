@@ -99,6 +99,14 @@ from a private temporary directory with supported local
 passing the worktree explicitly. It does not alter global or candidate
 configuration. Global extensions can still load.
 
+Phases can also run through Claude Code with `factory agent` and a v2 policy
+(`examples/claude-*-policy.json`, `examples/supervised-claude.json`; the v2
+Copilot policies use the same schema). The Claude path is held to the same
+fail-closed standard: private launch dir, path-scoped tools, an exact
+environment allowlist, an init-event isolation check and a post-run residue
+audit. See `examples/USAGE.md` and
+[ADR 0001](adr/0001-claude-phase-worker-via-cli.md).
+
 This exact adapter was then exercised against real Copilot: Producer planned,
 Dev implemented a standalone context-reader example in an isolated worktree,
 controller tests and vet passed, and separate QA/review sessions accepted the

@@ -42,7 +42,14 @@ to alternate worker commands; `--profile` selects exactly one. Optional
 ## Worker contract and trust
 
 The worker's working directory is an isolated Git worktree at the caller's
-explicit HEAD commit, on branch `factory/RUN_ID`. It receives these variables:
+explicit HEAD commit, on branch `factory/RUN_ID`. New runs create it at
+`<parent>/<repo>.factory-runs/<RUN_ID>`, derived from the common Git dir
+(`/x/proj/.git` gives `/x/proj.factory-runs`), not under `.git`, because Claude
+Code refuses writes under `.git`. The `.factory-runs` root must be a real
+directory owned by you with mode 0700 or stricter, and not a symlink;
+otherwise the run refuses and never repairs it. Run state, journal and evidence
+stay in `.git/factory/runs/<id>`. Existing runs keep their stored worktree
+paths, and the factory never deletes worktrees. It receives these variables:
 
 * `FACTORY_RUN_ID`: durable identifier
 * `FACTORY_WORKTREE`: absolute working directory
@@ -76,7 +83,14 @@ paths or committed non-secret context; do not assume untracked agents exist.
 The optional supervised adapter explicitly snapshots selected profiles; it
 does not rely on automatic worktree discovery. There is no installed Conductor
 dependency or claimed Conductor capability probe.
-`doctor` only validates config and executable availability. A configured
+`doctor` validates config and executable availability and, for each
+policy-driven phase (`factory agent|copilot --policy ...`), parses the flags
+exactly as the adapter does (`--policy P`, `--policy=P`, `-policy P`,
+`-policy=P`), loads the policy for the phase role and reports
+`phase_runtimes` (phase, runtime, executable and, for Claude, the version). A
+missing or invalid policy fails `doctor` closed. Specialist phases are
+checked only when selected with `--profile`. For Claude phases `doctor` runs
+only `claude --version`; it never starts a model session. A configured
 Conductor wrapper is generic external command execution, not a native adapter.
 
 ## Safety and recovery
@@ -206,6 +220,91 @@ non-path-scoped. Global settings/extensions and equivalent host privileges
 can exceed adapter grants: filesystem/network/credential isolation is **not**
 guaranteed. Default QA independently assesses task acceptance,
 candidate and check evidence; it does not independently execute tests.
+
+### `factory agent --policy PATH` (runtime-neutral, v2)
+
+Runs one controller phase through the runtime the policy names (`copilot` or
+`claude`). `factory copilot --policy PATH` remains for v1 policies and also
+accepts a v2 Copilot policy; it refuses a policy for any other runtime.
+
+A v2 policy is
+`{version:2, runtime, executable, role, agent, source_profile, grants, model?}`
+with absolute `executable` and `source_profile`, a safe `agent` name and a
+`role` matching the controller phase. `grants` is `["read"]` or, for Dev only,
+`["read","write"]`; `read` is mandatory, duplicates and any other grant
+(shell, blanket) are rejected. `model` is optional, must match
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` (so it can never parse as a flag) and is
+rejected by the Copilot runtime. Examples: `claude-producer-policy.json`,
+`claude-dev-policy.json`, `claude-qa-policy.json`, `claude-review-policy.json`,
+the v2 Copilot `*-policy.json` files and the workflow
+`supervised-claude.json`. The pipeline roles `factory-producer`,
+`factory-dev`, `factory-qa` and `factory-reviewer` live in `.apm/agents/`.
+
+Claude phases run `claude -p` from a private launch dir with this isolation:
+private launch dir outside any checkout; no user/project/local settings sources
+(no user hooks, plugins, permissions or global CLAUDE.md); disableAllHooks; no
+MCP; no skills; exact tool list with dontAsk; reads limited to the worktree,
+private inputs and profile; Dev writes limited to the worktree; env is an exact
+allowlist; built-in plugins (agents-md, telemetry, plugin-authoring) still
+load; auto-memory points at an empty per-launch-dir folder that is removed after
+the run; isolation verified from the init event; not a sandbox.
+
+Tools are `Read`, `Grep` and `Glob`, plus `Edit` and `Write` for Dev with the
+`write` grant. `Bash`, `WebFetch`, `WebSearch`, `Agent`, `NotebookEdit` and MCP
+tools are never granted. Every allow rule is path-scoped (`Tool(//abs/path/**)`)
+and emitted for both the given and the symlink-resolved path. A rule root (the
+worktree, the private inputs or the profile snapshot) that contains whitespace,
+any of `* ? [ ] { } ( ) ,`, a backslash, a control character or invalid UTF-8,
+or that is not absolute and canonical, or is `/`, is refused with
+`failure_reason=policy`; paths are never escaped. Consequence: a repository
+whose path, or whose parent directory's path (because run worktrees live in
+`<parent>/<repo>.factory-runs/`), contains such characters cannot run Claude
+phases.
+
+The child environment is an exact allowlist: `PATH HOME USER LOGNAME SHELL
+TMPDIR LANG LC_* TERM`, plus `CLAUDE_CONFIG_DIR` if set. Dropped variable names
+(never values) are recorded in `adapter.json`, with the `claude --version`
+output. Authentication is the subscription login only: no `--bare`, no API
+key, and `ANTHROPIC_*` never reaches the child.
+
+The phase fails closed unless Claude's `system/init` event is the first event
+and proves the isolation: exactly the requested tool list; `mcp_servers`,
+`skills` and `plugins` present as arrays, with no MCP servers, no skills and
+only the built-in plugins `cc-plugin-agents-md@builtin`,
+`cc-plugin-telemetry@builtin` and `cc-plugin-plugin-authoring@builtin`;
+`permissionMode` `dontAsk`; `cwd` equal to the private launch dir; and
+`apiKeySource` exactly `"none"`. The result event must be a successful
+non-empty result; data after it is invalid.
+
+Post-run audit (`PostRun`): the launch dir must be unchanged against its
+pre-run manifest, and Claude's per-launch-dir state under
+`~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) is checked. Entries
+are matched by the sanitised launch base name, either exactly or as the
+`-<launch-base>` suffix. An entry holding only empty directories is removed
+with `rmdir`, never recursively; any file or symlink fails the phase and the
+entry is kept and listed as residue. A launch path whose sanitised name is
+over 200 characters fails closed because Claude may shorten such names.
+
+Post-run facts go to `adapter-outcome.json`, written only by drivers that
+record outcomes (Claude), because `adapter.json` is sealed before the run:
+`runtime`, `failure_reason`, `model`, `claude_code_version`, `api_key_source`,
+`rate_limited`, `permission_denials` and `residue` (empty fields omitted).
+Each permission denial records the `tool` and target `path` only, never file
+contents or patterns. `failure_reason` is one of `usage_limit`, `timeout`,
+`isolation_mismatch`, `stream_invalid`, `contract`, `policy`. The first reason
+set wins, in this order of precedence: isolation evidence (integrity or seal
+violations, PostRun findings, init mismatches) outranks stream classification;
+truncated output is `stream_invalid`; an unsuccessful or incomplete result is
+`usage_limit` when a rate limit was seen, otherwise `stream_invalid`; a failure
+with no more specific reason is `contract`. `timeout` is recorded only when the
+adapter's own context ends before the child exits (a controller timeout kills
+the adapter and appears in the controller's evidence). The adapter never
+retries. See `docs/adr/0001-claude-phase-worker-via-cli.md`.
+
+`FACTORY_LIVE_CLAUDE=1 go test ./internal/factory -run ClaudeLive -count=1 -v`
+is an opt-in smoke test against the real CLI. It uses subscription quota
+(haiku) and the real HOME, only checking read-only that no residue is left. It
+is skipped by default.
 
 `factory roborev-import --report PATH --fingerprint REVIEWED_HASH` is an
 alternative review phase adapter. It accepts canonical roborev v0.71.0 schema
