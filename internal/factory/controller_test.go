@@ -22,6 +22,9 @@ func TestMain(m *testing.M) {
 	if os.Getenv("GO_WANT_COPILOT_FIXTURE") == "1" && len(os.Args) > 1 && os.Args[1] == "--agent" {
 		os.Exit(copilotFixture())
 	}
+	if isClaudeFixtureInvocation(os.Args) {
+		os.Exit(claudeFixture())
+	}
 	goleak.VerifyTestMain(m)
 }
 
@@ -42,6 +45,15 @@ func fixture(mode string, args []string) int {
 		_, err := executeGroup(context.Background(), os.Getenv("FACTORY_WORKTREE"), cmd.Argv, os.Environ(), os.Stdout, nil, false)
 		if err != nil {
 			return 62
+		}
+		return 0
+	case "agent":
+		if len(args) != 1 {
+			return 60
+		}
+		if err := RunPhase(context.Background(), args[0], ""); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 61
 		}
 		return 0
 	case "adapter":
