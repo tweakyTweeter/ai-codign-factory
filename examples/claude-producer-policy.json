@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "runtime": "claude",
+  "executable": "/absolute/path/to/claude",
+  "role": "producer",
+  "agent": "factory-producer",
+  "source_profile": "/absolute/path/to/.apm/agents/factory-producer.agent.md",
+  "grants": ["read"]
+}

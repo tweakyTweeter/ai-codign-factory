@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "runtime": "claude",
+  "executable": "/absolute/path/to/claude",
+  "role": "review",
+  "agent": "factory-reviewer",
+  "source_profile": "/absolute/path/to/.apm/agents/factory-reviewer.agent.md",
+  "grants": ["read"],
+  "model": "opus"
+}

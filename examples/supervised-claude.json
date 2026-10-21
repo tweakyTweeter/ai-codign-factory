@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "beads_argv": ["bd"],
+  "checks": [
+    {"argv": ["go", "test", "./..."], "timeout": "2m"},
+    {"argv": ["go", "vet", "./..."], "timeout": "2m"}
+  ],
+  "workflow": {
+    "phases": [
+      {
+        "name": "producer",
+        "role": "producer",
+        "command": {"argv": ["/absolute/path/to/factory", "agent", "--policy", "/absolute/path/to/claude-producer-policy.json"], "timeout": "5m"}
+      },
+      {
+        "name": "dev",
+        "role": "dev",
+        "command": {"argv": ["/absolute/path/to/factory", "agent", "--policy", "/absolute/path/to/claude-dev-policy.json"], "timeout": "15m"}
+      },
+      {
+        "name": "qa",
+        "role": "qa",
+        "command": {"argv": ["/absolute/path/to/factory", "agent", "--policy", "/absolute/path/to/claude-qa-policy.json"], "timeout": "5m"}
+      },
+      {
+        "name": "review",
+        "role": "review",
+        "command": {"argv": ["/absolute/path/to/factory", "agent", "--policy", "/absolute/path/to/claude-review-policy.json"], "timeout": "5m"}
+      }
+    ]
+  }
+}

@@ -7,7 +7,7 @@ import (
 )
 
 func TestExampleConfigs_StayCompatibleWithParser(t *testing.T) {
-	for _, name := range []string{"factory.json", "supervised.json"} {
+	for _, name := range []string{"factory.json", "supervised.json", "supervised-claude.json"} {
 		if _, err := LoadConfig(filepath.Join("..", "..", "examples", name)); err != nil {
 			t.Fatalf("example %s: %v", name, err)
 		}

@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "runtime": "claude",
+  "executable": "/absolute/path/to/claude",
+  "role": "qa",
+  "agent": "factory-qa",
+  "source_profile": "/absolute/path/to/.apm/agents/factory-qa.agent.md",
+  "grants": ["read"],
+  "model": "opus"
+}

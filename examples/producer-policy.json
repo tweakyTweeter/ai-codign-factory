@@ -1,9 +1,9 @@
 {
-  "version": 1,
+  "version": 2,
+  "runtime": "copilot",
   "executable": "/absolute/path/to/copilot",
   "role": "producer",
-  "agent": "ai-team-producer",
-  "source_profile": "/absolute/path/to/ai-team-producer.agent.md",
-  "available_tools": ["view", "rg", "glob"],
-  "allow_tools": []
+  "agent": "factory-producer",
+  "source_profile": "/absolute/path/to/.apm/agents/factory-producer.agent.md",
+  "grants": ["read"]
 }
