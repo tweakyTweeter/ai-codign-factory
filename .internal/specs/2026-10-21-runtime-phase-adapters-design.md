@@ -164,8 +164,10 @@ final answer. `permission_denials` from the result event are copied into
 
 Path rule: before any allow rule is built, `Tools` rejects (fails closed, failure_reason `policy`)
 any worktree, inputs or profile path, in its given or symlink-resolved form, that contains one of
-`* ? [ ] { } ( ) ,`, any whitespace or any control character. Such characters would widen or break a
-permission rule; paths are never escaped or quoted.
+`* ? [ ] { } ( ) , \`, any whitespace, any control character or invalid UTF-8. Such characters would
+widen, redirect or break a permission rule (`\` is the gitignore escape). Each form must also be
+absolute and canonical (`filepath.Clean(form) == form`: no `.` or `..` component, no `//`, no trailing
+`/`) and must not be `/`. Paths are never escaped or quoted.
 
 Verified by probe against Claude Code 2.1.306: with these flags, the `init` event
 reports only the granted tools, no MCP servers, no skills and only the built-in plugins,

@@ -15,7 +15,7 @@ func claudeTestPolicy(role string, grants ...string) PhasePolicy {
 }
 
 func TestClaudeTools_PathScoped(t *testing.T) {
-	dir, _ := filepath.EvalSymlinks(t.TempDir())
+	dir := resolvedTempDir(t)
 	roots := ToolRoots{Worktree: filepath.Join(dir, "wt"), Inputs: filepath.Join(dir, "in"), Profile: filepath.Join(dir, "pr")}
 	for _, d := range []string{roots.Worktree, roots.Inputs, roots.Profile} {
 		if err := os.MkdirAll(d, 0700); err != nil {
@@ -84,10 +84,10 @@ func TestClaudeEnv_StrictAllowlist(t *testing.T) {
 }
 
 func TestClaudeTools_RejectsRuleWideningPaths(t *testing.T) {
-	for name, dirname := range map[string]string{"bracket": "proj[12]", "star": "pr*oj", "question": "pr?oj", "brace": "pr{a,b}oj", "paren": "proj)x", "open paren": "pr(oj", "comma": "pr,oj", "space": "pr oj", "tab": "pr\toj", "newline": "pr\noj"} {
+	for name, dirname := range map[string]string{"bracket": "proj[12]", "star": "pr*oj", "question": "pr?oj", "brace": "pr{a,b}oj", "paren": "proj)x", "open paren": "pr(oj", "comma": "pr,oj", "space": "pr oj", "tab": "pr\toj", "newline": "pr\noj", "backslash": `pr\oj`, "backslash before t": `w\t`, "trailing backslash": `proj\`} {
 		for _, slot := range []string{"worktree", "inputs", "profile"} {
 			t.Run(name+"/"+slot, func(t *testing.T) {
-				base, _ := filepath.EvalSymlinks(t.TempDir())
+				base := resolvedTempDir(t)
 				roots := ToolRoots{Worktree: filepath.Join(base, "wt"), Inputs: filepath.Join(base, "in"), Profile: filepath.Join(base, "pr")}
 				bad := filepath.Join(base, dirname)
 				switch slot {
@@ -116,7 +116,7 @@ func TestClaudeTools_RejectsRuleWideningPaths(t *testing.T) {
 }
 
 func TestClaudeTools_RejectsMetacharacterInResolvedForm(t *testing.T) {
-	base, _ := filepath.EvalSymlinks(t.TempDir())
+	base := resolvedTempDir(t)
 	target := filepath.Join(base, "real[1]")
 	if err := os.MkdirAll(target, 0700); err != nil {
 		t.Fatal(err)
@@ -128,6 +128,98 @@ func TestClaudeTools_RejectsMetacharacterInResolvedForm(t *testing.T) {
 	roots := ToolRoots{Worktree: link, Inputs: link, Profile: link}
 	if _, err := (claudeDriver{}).Tools(claudeTestPolicy("qa", "read"), roots); err == nil {
 		t.Fatal("symlink resolving to a metacharacter path must be rejected")
+	}
+}
+
+func resolvedTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// expectUnsafeRoot asserts that Tools fails closed with no rules when one root
+// slot holds the given path.
+func expectUnsafeRoot(t *testing.T, base, slot, path string) {
+	t.Helper()
+	roots := ToolRoots{Worktree: filepath.Join(base, "wt"), Inputs: filepath.Join(base, "in"), Profile: filepath.Join(base, "pr")}
+	for _, d := range []string{roots.Worktree, roots.Inputs, roots.Profile} {
+		if err := os.MkdirAll(d, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	switch slot {
+	case "worktree":
+		roots.Worktree = path
+	case "inputs":
+		roots.Inputs = path
+	default:
+		roots.Profile = path
+	}
+	got, err := claudeDriver{}.Tools(claudeTestPolicy("dev", "read", "write"), roots)
+	if err == nil || !strings.Contains(err.Error(), "unsafe") {
+		t.Fatalf("expected unsafe-path error for %q, got %+v: %v", path, got, err)
+	}
+	if len(got.Allowed) != 0 {
+		t.Fatalf("rules returned alongside error: %q", got.Allowed)
+	}
+}
+
+func TestClaudeTools_RejectsNonCanonicalRoots(t *testing.T) {
+	forms := map[string]func(base string) string{
+		"dot component":    func(b string) string { return b + "/./wt" },
+		"dotdot component": func(b string) string { return b + "/x/../wt" },
+		"trailing slash":   func(b string) string { return b + "/wt/" },
+		"double slash":     func(b string) string { return b + "//wt" },
+	}
+	for name, form := range forms {
+		for _, slot := range []string{"worktree", "inputs", "profile"} {
+			t.Run(name+"/"+slot, func(t *testing.T) {
+				base := resolvedTempDir(t)
+				if err := os.MkdirAll(filepath.Join(base, "x"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				expectUnsafeRoot(t, base, slot, form(base))
+			})
+		}
+	}
+}
+
+func TestClaudeTools_RejectsFilesystemRoot(t *testing.T) {
+	for _, slot := range []string{"worktree", "inputs", "profile"} {
+		t.Run(slot, func(t *testing.T) { expectUnsafeRoot(t, resolvedTempDir(t), slot, "/") })
+	}
+}
+
+func TestClaudeTools_RejectsRelativeRoot(t *testing.T) {
+	for _, slot := range []string{"worktree", "inputs", "profile"} {
+		t.Run(slot, func(t *testing.T) { expectUnsafeRoot(t, resolvedTempDir(t), slot, "testdata") })
+	}
+}
+
+func TestClaudeTools_RejectsInvalidUTF8Root(t *testing.T) {
+	for _, slot := range []string{"worktree", "inputs", "profile"} {
+		t.Run(slot, func(t *testing.T) {
+			base := resolvedTempDir(t)
+			bad := filepath.Join(base, "pr\xffoj")
+			if err := os.Mkdir(bad, 0700); err != nil {
+				t.Skipf("filesystem refuses invalid UTF-8 names: %v", err)
+			}
+			expectUnsafeRoot(t, base, slot, bad)
+		})
+	}
+}
+
+// The filesystem test above skips where names must be UTF-8 (APFS), so the
+// predicate is also checked directly.
+func TestUnsafeRuleRoot_InvalidUTF8(t *testing.T) {
+	if !unsafeRuleRoot("/tmp/pr\xffoj") {
+		t.Fatal("invalid UTF-8 root accepted")
+	}
+	if unsafeRuleRoot("/tmp/caf\u00e9") {
+		t.Fatal("valid non-ASCII root rejected")
 	}
 }
 

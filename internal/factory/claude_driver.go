@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 )
 
 type claudeDriver struct{}
@@ -82,11 +83,13 @@ func (claudeDriver) ProfileLaunchCopy(launch, agent string, profile []byte) (str
 func scopedRule(tool, root string) string { return tool + "(/" + root + "/**)" }
 
 // unsafeRuleRoot reports whether a root path could change the meaning of a
-// permission rule: glob metacharacters, rule delimiters, whitespace or control
-// characters. Such paths are rejected, never escaped.
+// gitignore-style permission rule: glob metacharacters, the `\` escape, rule
+// delimiters, whitespace, control characters, or invalid UTF-8 (which Claude
+// would decode to U+FFFD and so match a different directory). Such paths are
+// rejected, never escaped.
 func unsafeRuleRoot(path string) bool {
-	return strings.ContainsFunc(path, func(r rune) bool {
-		return strings.ContainsRune("*?[]{}(),", r) || unicode.IsSpace(r) || unicode.IsControl(r)
+	return !utf8.ValidString(path) || strings.ContainsFunc(path, func(r rune) bool {
+		return strings.ContainsRune("*?[]{}(),\\", r) || unicode.IsSpace(r) || unicode.IsControl(r)
 	})
 }
 
@@ -98,8 +101,13 @@ func safeScopeRoots(label, path string) ([]string, error) {
 		return nil, err
 	}
 	for _, form := range forms {
+		// The rule text must name exactly the directory it scopes: absolute,
+		// canonical (no ".", "..", "//" or trailing "/"), and never "/".
+		if !filepath.IsAbs(form) || filepath.Clean(form) != form || form == string(filepath.Separator) {
+			return nil, fmt.Errorf("claude %s path %q is unsafe in a permission rule: it must be absolute, canonical and not the filesystem root", label, form)
+		}
 		if unsafeRuleRoot(form) {
-			return nil, fmt.Errorf("claude %s path %q contains characters unsafe in a permission rule (glob, bracket, parenthesis, comma, whitespace or control); use a path without them", label, form)
+			return nil, fmt.Errorf("claude %s path %q contains characters unsafe in a permission rule (glob, bracket, parenthesis, comma, backslash, whitespace, control or invalid UTF-8); use a path without them", label, form)
 		}
 	}
 	return forms, nil
