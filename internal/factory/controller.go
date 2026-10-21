@@ -196,10 +196,7 @@ func (c Controller) Run(ctx context.Context, req Request) (run Run, result error
 	if err := c.save(&run, "creating_worktree", "intent: create isolated branch/worktree at explicit HEAD", false); err != nil {
 		return run, err
 	}
-	if err := checkRunWorktreePath(c.Repo.Common, run.Worktree); err != nil {
-		return run, err
-	}
-	if err := os.MkdirAll(c.Repo.Worktrees, 0700); err != nil {
+	if err := prepareWorktreesRoot(c.Repo.Common, c.Repo.Worktrees, run.Worktree); err != nil {
 		return run, err
 	}
 	if _, err := gitOutput(workerCtx, c.Repo.Root, "-c", "core.hooksPath=/dev/null", "worktree", "add", "-b", run.Branch, run.Worktree, run.Head); err != nil {

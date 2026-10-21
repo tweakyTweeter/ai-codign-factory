@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -43,7 +44,9 @@ func Discover(ctx context.Context, path string) (Repo, error) {
 
 // worktreesDir derives the run worktrees root from the common git dir, so every
 // linked worktree of a repository agrees: /x/proj/.git -> /x/proj.factory-runs,
-// bare /x/proj.git -> /x/proj.git.factory-runs.
+// bare /x/proj.git -> /x/proj.git.factory-runs. Bare repositories are not
+// supported in practice (Discover needs a work tree); with --separate-git-dir
+// the root sits beside the git store, not beside the work tree.
 func worktreesDir(common string) string {
 	base := common
 	if filepath.Base(common) == ".git" {
@@ -59,7 +62,7 @@ func checkRunWorktreePath(common, worktree string) error {
 		return fmt.Errorf("run worktree path %q must be absolute and clean", worktree)
 	}
 	rel, err := filepath.Rel(common, worktree)
-	if err != nil || rel == "." || !strings.HasPrefix(rel, "..") {
+	if err != nil || rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))) {
 		return fmt.Errorf("run worktree path %q is inside the common git dir %q; refusing to create it", worktree, common)
 	}
 	for _, part := range strings.Split(worktree, string(filepath.Separator)) {
@@ -68,6 +71,48 @@ func checkRunWorktreePath(common, worktree string) error {
 		}
 	}
 	return nil
+}
+
+// prepareWorktreesRoot creates the shared run worktrees root if needed and
+// fails closed unless it is a real directory (not a symlink) owned by this
+// user with no group or other permissions, whose resolved path is unchanged
+// and still passes checkRunWorktreePath for worktree. It never repairs, chmods
+// or deletes a bad root; it refuses instead. Call it before git worktree add.
+func prepareWorktreesRoot(common, root, worktree string) error {
+	if err := checkRunWorktreePath(common, worktree); err != nil {
+		return err
+	}
+	if filepath.Dir(worktree) != root {
+		return fmt.Errorf("run worktree path %q is not directly under the worktrees root %q; refusing to create it", worktree, root)
+	}
+	if err := os.MkdirAll(root, 0700); err != nil {
+		return fmt.Errorf("create run worktrees root %q: %w", root, err)
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return fmt.Errorf("inspect run worktrees root %q: %w", root, err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("run worktrees root %q is a symlink; refusing to create a worktree through it", root)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("run worktrees root %q is not a directory; refusing to create a worktree", root)
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || int(stat.Uid) != os.Getuid() {
+		return fmt.Errorf("run worktrees root %q is not owned by the current user; refusing to create a worktree", root)
+	}
+	if perm := info.Mode().Perm(); perm&0077 != 0 {
+		return fmt.Errorf("run worktrees root %q has mode %#o, want 0700 or stricter; refusing to create a worktree", root, perm)
+	}
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("resolve run worktrees root %q: %w", root, err)
+	}
+	if resolved != root {
+		return fmt.Errorf("run worktrees root %q resolves to %q; refusing to create a worktree", root, resolved)
+	}
+	return checkRunWorktreePath(common, filepath.Join(resolved, filepath.Base(worktree)))
 }
 
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {

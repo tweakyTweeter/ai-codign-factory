@@ -31,6 +31,10 @@ func TestCheckRunWorktreePath_FailsClosedInsideGit(t *testing.T) {
 			t.Fatalf("guard accepted %q", bad)
 		}
 	}
+	// A child named "..foo" is inside; only the containment check can catch it here.
+	if err := checkRunWorktreePath("/x/proj.git", "/x/proj.git/..foo"); err == nil {
+		t.Fatal("guard accepted a child named ..foo")
+	}
 	if err := checkRunWorktreePath(common, "/x/proj.factory-runs/abc"); err != nil {
 		t.Fatalf("guard rejected sibling worktree: %v", err)
 	}
@@ -84,5 +88,62 @@ func TestRun_WorktreeCreatedOutsideCommonGitDir(t *testing.T) {
 	}
 	if fp, err := Fingerprint(t.Context(), r.Worktree); err != nil || fp == "" {
 		t.Fatalf("fingerprint on new worktree: %q %v", fp, err)
+	}
+}
+
+func TestRun_RefusesSymlinkedWorktreesRootBeforeWorktreeAdd(t *testing.T) {
+	c := setupController(t)
+	target := filepath.Join(c.Repo.Common, "planted")
+	if err := os.Mkdir(target, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, c.Repo.Worktrees); err != nil {
+		t.Fatal(err)
+	}
+	r, err := c.Run(t.Context(), request())
+	if err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("run accepted a symlinked worktrees root: %+v %v", r, err)
+	}
+	entries, err := os.ReadDir(target)
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("worktree created through planted symlink: %v %v", entries, err)
+	}
+	list, err := gitOutput(t.Context(), c.Repo.Root, "worktree", "list", "--porcelain")
+	if err != nil || strings.Contains(list, r.ID) {
+		t.Fatalf("git worktree add ran: %q %v", list, err)
+	}
+}
+
+func TestRun_RefusesLoosePermissionWorktreesRoot(t *testing.T) {
+	c := setupController(t)
+	if err := os.Mkdir(c.Repo.Worktrees, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(c.Repo.Worktrees, 0755); err != nil {
+		t.Fatal(err)
+	}
+	r, err := c.Run(t.Context(), request())
+	if err == nil || !strings.Contains(err.Error(), "0700") {
+		t.Fatalf("run accepted a 0755 worktrees root: %+v %v", r, err)
+	}
+	if _, err := os.Lstat(filepath.Join(c.Repo.Worktrees, r.ID)); !os.IsNotExist(err) {
+		t.Fatalf("worktree created under loose root: %v", err)
+	}
+	if info, err := os.Stat(c.Repo.Worktrees); err != nil || info.Mode().Perm() != 0755 {
+		t.Fatalf("guard modified the bad root: %v %v", info, err)
+	}
+}
+
+func TestRun_AcceptsPrivateWorktreesRootFromEarlierRun(t *testing.T) {
+	c := setupController(t)
+	if err := os.Mkdir(c.Repo.Worktrees, 0700); err != nil {
+		t.Fatal(err)
+	}
+	r, err := c.Run(t.Context(), request())
+	if err != nil || r.State != "awaiting_review" {
+		t.Fatalf("run refused a private existing root: %+v %v", r, err)
+	}
+	if _, err := os.Stat(filepath.Join(c.Repo.Worktrees, r.ID)); err != nil {
+		t.Fatal(err)
 	}
 }
