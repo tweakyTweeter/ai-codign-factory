@@ -11,3 +11,11 @@
 
 # APM dependencies
 apm_modules/
+
+# Per-agent local state (settings, memory, caches) stays untracked; only the
+# links to the shared, agent-neutral definitions in .agents/ are committed.
+.claude/*
+!.claude/skills/
+!.claude/agents/
+.opencode/*
+!.opencode/agents/

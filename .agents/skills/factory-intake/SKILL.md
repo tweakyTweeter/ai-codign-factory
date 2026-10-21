@@ -14,6 +14,37 @@ ticket to `factory run --task` exactly as an operator would.
 Read first: `docs/intake-workflow.md`, `docs/agents/issue-tracker.md`,
 `docs/agents/domain.md`, `docs/supervised-workflow.md`, `docs/human-approval.md`.
 
+## Running under different agents
+
+This skill works in Claude Code, Codex, OpenCode and Copilot. Where the
+steps say "launch", "continue" or "load", use your harness's mechanism:
+
+| Step | Claude Code | OpenCode | Codex | Copilot |
+| --- | --- | --- | --- | --- |
+| Launch a named subagent | Agent tool, `subagent_type` = name | Task tool, agent = name | Spawn a subagent with the role file as its instructions | Custom agent = name |
+| Continue the same subagent | `SendMessage` to its ID | Task tool with the same session ID | Follow up in the same subagent thread | `write_agent` |
+| Load a skill | Skill tool | skill tool | Read the skill's `SKILL.md` | Skill tool |
+
+Role definitions live in `.apm/agents/` (APM deploys them to
+`.github/agents/` for Copilot; `.claude/agents/` and `.opencode/agents/`
+link to them; Codex reads the file directly):
+
+| Role | Name | Source |
+| --- | --- | --- |
+| Producer | `factory-producer` | `.apm/agents/factory-producer.agent.md` |
+| Principal Engineer | `factory-principal-engineer` | `.apm/agents/factory-principal-engineer.agent.md` |
+
+If your harness has no subagents, or cannot continue one, stop and tell the
+user. Do not play both sides of the interview yourself: the point of
+grilling is a second context that must defend its answers.
+
+**User-only skills.** `to-spec`, `to-tickets`, `wayfinder` and `handoff` set
+`disable-model-invocation`, so some harnesses refuse to load them through the
+skill tool. When that happens, read the `SKILL.md` directly from the first of
+`.agents/skills/NAME/`, `~/.agents/skills/NAME/`, `~/.claude/skills/NAME/`
+that exists, and follow it. If none exists, tell the user which skill is
+missing and stop. Do not edit the installed skills.
+
 ## Hard rules
 
 - Beads is the tracker. Follow `docs/agents/issue-tracker.md` for every
@@ -57,7 +88,7 @@ then `bd update EPIC --claim --sandbox`.
 
 ### 1. Draft (Producer subagent)
 
-Launch an `ai-team-producer` subagent and keep its agent ID for follow-ups.
+Launch a `factory-producer` subagent and keep its ID for follow-ups.
 Give it the raw request, the repository path and the read-first docs. Ask it
 to explore the code and return: problem statement, proposed scope, affected
 modules, test seams it would use, open assumptions, and which assumptions
@@ -65,13 +96,17 @@ only the human can decide.
 
 ### 2. Grill the subagent
 
-Call the Skill tool with `grill-with-docs` if installed, otherwise
-`grill-me` (which delegates to `grilling`). Also call `domain-modeling` and
-`codebase-design` to frame the questions. If the grilling skill you need is
-not installed, tell the user which one is missing and stop.
+Load `grilling`, `domain-modeling` and `codebase-design`. (`grill-with-docs`
+is just `grilling` plus `domain-modeling`, and `grill-me` just `grilling`;
+load the underlying skills directly because the wrappers are user-only.) If
+any of the three is not installed, tell the user which one is missing and
+stop.
 
-Run the interview **against the subagent** with `write_agent`, one question
-at a time, walking the decision tree until every branch is resolved. Push on
+Run the interview **against the subagent** by continuing the same subagent,
+one question at a time, walking the decision tree until every branch is
+resolved. `grilling` is written for interviewing the user: here the subagent
+answers, and only the questions it cannot settle from evidence reach the
+human. Push on
 vague terms (domain-modeling), interface depth and seam placement
 (codebase-design), failure modes, the ownership and authority boundaries in
 `docs/architecture.md`, and testability. Questions the subagent cannot answer
@@ -80,15 +115,15 @@ preferences.
 
 Optional branches:
 - **prototype** when "how should it behave or look" is the open question:
-  call the Skill tool with `prototype`, build only under `$TMPDIR`, and link
+  load `prototype`, build only under `$TMPDIR`, and link
   it from the epic notes.
-- **wayfinder** when the request is too large for one spec: call the Skill
-  tool with `wayfinder`, chart the map in Beads per the tracker doc, then
+- **wayfinder** when the request is too large for one spec: load
+  `wayfinder`, chart the map in Beads per the tracker doc, then
   stop. Run intake again per resolved destination.
 
 ### 3. Principal Engineer review
 
-Launch a `Principal software engineer` subagent with pointers to the epic,
+Launch a `factory-principal-engineer` subagent with pointers to the epic,
 the grilling outcome and the human answers. Ask it to challenge the design
 for cross-cutting risk, depth and seam placement (codebase-design
 vocabulary), failure handling and test strategy, and to return required
@@ -97,7 +132,7 @@ changes. Resolve each required change with the Producer subagent or through
 
 ### 4. Spec
 
-Call the Skill tool with `to-spec`. Synthesize; do not re-interview. Confirm
+Load `to-spec`. Synthesize; do not re-interview. Confirm
 the test seams through one "Approve spec seams" decision (seams in the
 body). Publish by replacing the epic description:
 `bd update EPIC --body-file SPEC --sandbox`. Do not label the epic
@@ -105,7 +140,7 @@ body). Publish by replacing the epic description:
 
 ### 5. Tickets
 
-Call the Skill tool with `to-tickets` on the epic. Instead of quizzing in
+Load `to-tickets` on the epic. Instead of quizzing in
 chat, put the numbered breakdown (title, blocked by, what it delivers,
 acceptance criteria) in one "Approve ticket breakdown" decision and iterate
 through "Ask the human" until approved. Then publish children in dependency
@@ -135,8 +170,8 @@ After the last ticket closes, close the epic with a summary reason.
 
 ### 7. Handoff
 
-If context runs long, the loop stops, or the session ends, call the Skill
-tool with `handoff` (written to `$TMPDIR`). Point at the epic ID, open
+If context runs long, the loop stops, or the session ends, load
+`handoff` (written to `$TMPDIR`). Point at the epic ID, open
 decisions, the current run ID and the next command. Reference Beads IDs
 instead of pasting spec or ticket bodies.
 

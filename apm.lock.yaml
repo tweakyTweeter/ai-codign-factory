@@ -288,6 +288,24 @@ deployments:
   content_hash: sha256:63197c5250702760e79fb3ccb4e2b154b1a52b41ac62e7d45ae2def6eea23952
 - kind: project-relative
   target: copilot
+  value: .github/agents/factory-principal-engineer.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:33746948e000a3bd6042e43e97d47953c24138529f1a0f75c3b36e0560b2d627
+- kind: project-relative
+  target: copilot
+  value: .github/agents/factory-producer.agent.md
+  runtime: null
+  scope: project
+  owners:
+  - .
+  active_owner: .
+  content_hash: sha256:3939cacff7fd265fa8b077ef4fb6f31f5cfb31ba908fa57ddd11428b91671ec9
+- kind: project-relative
+  target: copilot
   value: .github/agents/implementation-plan.agent.md
   runtime: null
   scope: project
@@ -376,3 +394,9 @@ deployments:
   - github/awesome-copilot/instructions/kubernetes-deployment-best-practices.instructions.md
   active_owner: github/awesome-copilot/instructions/kubernetes-deployment-best-practices.instructions.md
   content_hash: sha256:0aa8ddf92cb0534b373a987dd3b1e7f39338fcc9b18cb9c7a7d002aa8780bc09
+local_deployed_files:
+- .github/agents/factory-principal-engineer.agent.md
+- .github/agents/factory-producer.agent.md
+local_deployed_file_hashes:
+  .github/agents/factory-principal-engineer.agent.md: sha256:33746948e000a3bd6042e43e97d47953c24138529f1a0f75c3b36e0560b2d627
+  .github/agents/factory-producer.agent.md: sha256:3939cacff7fd265fa8b077ef4fb6f31f5cfb31ba908fa57ddd11428b91671ec9

@@ -5,13 +5,20 @@ Beads tickets, then feeds those tickets one at a time into the existing
 supervised factory. It adds a front stage; it does not change the
 controller, workflow phases, agent profiles or approval rules.
 
-Invoke it in a Copilot session at the repository root:
+Invoke it from any supported agent (Claude Code, Codex, OpenCode or Copilot)
+at the repository root:
 
 ```text
 /factory-intake <task or feature request>
 ```
 
-The procedure lives in `.agents/skills/factory-intake/SKILL.md`. The Beads
+The procedure lives in `.agents/skills/factory-intake/SKILL.md` (linked into
+`.claude/skills/` for Claude Code). Its two subagent roles,
+`factory-producer` and `factory-principal-engineer`, live in
+`.apm/agents/`. APM deploys them to `.github/agents/` for Copilot, and
+`.claude/agents/` and `.opencode/agents/` link to the same files. The skill's
+"Running under different agents" table maps launching and continuing a
+subagent onto each harness. The Beads
 mapping used by the Matt Pocock engineering skills lives in
 `docs/agents/issue-tracker.md` and `docs/agents/domain.md`.
 
@@ -73,8 +80,12 @@ candidate-bound native gate in `docs/human-approval.md`.
 | `/handoff` | Cross-session continuation document in `$TMPDIR` |
 | `/implement-spec`, `/implement` | Not used inside intake. The factory replaces them: one admitted run per repository, human-approved integration, no automatic commits |
 
-`/grill-me` delegates to a `grilling` skill. `/grill-with-docs`, `grilling`
-and `/setup-matt-pocock-skills` must be installed separately. If
+`/grill-me` and `/grill-with-docs` are thin wrappers over `grilling` (plus
+`domain-modeling`), so intake loads those directly. `to-spec`, `to-tickets`,
+`wayfinder` and `handoff` are marked user-only (`disable-model-invocation`);
+when a harness refuses to load them, intake reads their `SKILL.md` from
+`~/.agents/skills/` instead. All of these and `/setup-matt-pocock-skills`
+must be installed separately. If
 `/setup-matt-pocock-skills` is run later, keep the Beads tracker choice
 ("Other") so these files are not replaced with a GitHub or `.scratch`
 contract.

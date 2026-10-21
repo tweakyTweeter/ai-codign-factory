@@ -1,6 +1,6 @@
 # AI Coding Factory — Agent Handoff
 
-_Last updated: 2026-10-21. Read this first, then `AGENTS.md`, `README.md`, and `docs/`._
+_Last updated: 2026-10-21 (moved from Copilot to Claude Code). Read this first, then `AGENTS.md`, `README.md`, and `docs/`. Any supported agent (Claude Code, Codex, OpenCode, Copilot) can continue from here._
 
 ## 1. What this is
 
@@ -12,7 +12,7 @@ This is a **local-first, human-supervised AI coding factory** written in Go.
   2. Dev
   3. deterministic checks
   4. independent QA
-  5. review, using Copilot specialist phases.
+  5. review, using specialist agent phases (currently run through the Copilot adapter).
 - It records everything in a **SQLite journal**.
 - It publishes the candidate for **human approval in Scotty**.
 - It integrates locally only after explicit approval, using a conservative merge.
@@ -22,22 +22,23 @@ The latest addition is a **skill-driven intake stage**. Before the pipeline runs
 Conventions (must keep):
 - Use Go for backend code and Beads for all task tracking (`bd ready`, `bd update --claim`, `bd close`).
 - Do not commit, push or run `bd dolt push` unless the user explicitly asks.
-- Use the commit trailer `Co-authored-by: Copilot` with no email address.
+- Use a commit trailer naming the agent that did the work (see `AGENTS.md` → Agent portability).
 - Never overwrite APM-managed `.github/agents` / `apm_modules`, or existing skills. Augment them instead.
+- Keep it agent-agnostic: shared skills in `.agents/skills/`, shared subagent roles in `.apm/agents/` (deployed to `.github/agents/` by `apm install`), links in `.claude/` and `.opencode/`; per-agent local state is gitignored.
 - Product code always calls `bd` with `--sandbox`.
 
 ## 2. Architecture
 
 ```
                          ┌───────────────────────────────────────────┐
-  User request ───────►  │  /factory-intake skill (Copilot session)  │
+  User request ───────►  │  /factory-intake skill (any agent)        │
                          │  .agents/skills/factory-intake/SKILL.md   │
                          │                                           │
-                         │  ai-team-producer ──draft scope/seams──┐  │
-                         │        ▲  grill-with-docs / grill-me   │  │
+                         │  factory-producer ──draft scope/seams──┐  │
+                         │        ▲  grilling (subagent answers)  │  │
                          │        └── domain-modeling,            │  │
                          │            codebase-design             ▼  │
-                         │  Principal SW Engineer ──review──► to-spec│
+                         │  factory-principal-engineer ─► to-spec    │
                          │                    │                      │
                          │        "Approve spec seams" decision ─────┼──┐
                          │                    ▼                      │  │
@@ -97,7 +98,7 @@ Conventions (must keep):
 | Beads integration | `beads.go` | Claim, notes and close, all with `--sandbox` |
 | Docs | `README.md`, `docs/architecture.md`, `docs/supervised-workflow.md`, `docs/agent-setup.md`, `docs/external-runtimes.md`, `examples/USAGE.md` | |
 
-### Uncommitted (Beads `ai-coding-factory-ay3`, closed; all checks green)
+### Committed (`979bc7c feat(factory): add skill-driven intake and human decision waiter`, Beads `ai-coding-factory-ay3`)
 
 | Feature | Where |
 |---|---|
@@ -107,7 +108,18 @@ Conventions (must keep):
 | Tracker and domain contracts for the Matt Pocock skills (Beads-backed) | `docs/agents/issue-tracker.md`, `docs/agents/domain.md` |
 | Intake documentation and the skill-mapping table | `docs/intake-workflow.md`, plus updates to `AGENTS.md`, `README.md`, `examples/USAGE.md` and `docs/supervised-workflow.md` |
 
-Unrelated working-tree changes: the deleted `.claude/`, `.codex/`, `.cursor/` and `CLAUDE.md` files, and the untracked `.beads/showcase/`. **Leave these out of any commit** unless the user says otherwise.
+`816ac62 chore: remove per-tool agent configs and add beads showcase` removed `CLAUDE.md` and the `.claude/`, `.codex/` and `.cursor/` hook files, and added `.beads/showcase/`.
+
+### Committed: agent-agnostic intake (Beads `ai-coding-factory-7ir`, closed)
+
+| Change | Where |
+|---|---|
+| Neutral subagent roles `factory-producer` and `factory-principal-engineer`, authored as APM local primitives and deployed to `.github/agents/` for Copilot | `.apm/agents/`, `.github/agents/factory-*.agent.md`, `apm.lock.yaml`; linked from `.claude/agents/` and `.opencode/agents/` |
+| `factory-intake` and `beads` skills visible to Claude Code | links in `.claude/skills/` |
+| Skill rewritten with a per-harness table (launch / continue subagent / load skill) and a fallback for user-only skills (`to-spec`, `to-tickets`, `wayfinder`, `handoff`: read `SKILL.md` directly) | `.agents/skills/factory-intake/SKILL.md` |
+| `.claude/*` and `.opencode/*` ignored except the shared links | `.gitignore` |
+| "Agent portability" rules | `AGENTS.md` |
+| Agent-neutral wording | `docs/intake-workflow.md`, this file |
 
 ## 4. How to use it
 
@@ -125,7 +137,7 @@ $F integrate      --repo /path/to/target-checkout --run RUN_ID
 $F decisions await --repo $R --ids <decision-bead-ids>
 ```
 
-To run intake from a Copilot session, use `/factory-intake <request>`. You need to restart Copilot after the skill is added.
+To run intake, use `/factory-intake <request>` from any supported agent at the repository root. Restart the agent after skills or agent roles are added.
 
 The intake stages:
 1. Creates an epic labelled `factory-intake`.
@@ -157,9 +169,8 @@ How the skills map:
 ## 5. What remains to be built
 
 ### Immediate
-1. **Commit the intake work.** Commit only the files in the "Uncommitted" table above, using a conventional commit with the `Co-authored-by: Copilot` trailer. Do this only if the user authorizes it.
-2. **Install the missing skills.** `grilling` and `grill-with-docs` are not in `~/.agents/skills`; `/grill-me` only delegates to `grilling`. If you run `/setup-matt-pocock-skills`, choose tracker **"Other"** so the Beads docs are kept.
-3. **Dogfood intake end to end** on a small request. Check that:
+1. All intake skills are installed in `~/.agents/skills` and linked into `~/.claude/skills`. If you run `/setup-matt-pocock-skills`, choose tracker **"Other"** so the Beads docs are kept.
+2. **Dogfood intake end to end** on a small request, ideally from a non-Copilot agent. Check that:
    - the decision beads render in Scotty Needs You;
    - `decisions await` resumes after a comment;
    - the frontier loop completes one child.
@@ -172,9 +183,10 @@ How the skills map:
 | `ai-coding-factory-yth` | **Unattended supervision and serialized integration.** Run the factory as a durable service or daemon: a queue of ready beads, restart-safe, with integrations serialized. Humans still gate review acceptance and Git integration. |
 | `ai-coding-factory-vu6` | **Live status and controls.** A Go-owned local API or dashboard that exposes phase, logs, cancellation and recovery next to Scotty. It must not take over Beads ownership or imply integration authority, and it must fail closed. |
 | `ai-coding-factory-qg6` | **Restricted native roborev execution with provenance.** A foreground restricted launch that cannot widen permissions or mutate hooks or config. It captures the canonical report with origin and freshness provenance, and encodes the verdict in the result rather than in the process exit code. |
+| `ai-coding-factory-6nq` | **Runtime adapters.** Add `claude -p`, `codex exec` and `opencode run` phase adapters next to `copilot`, so pipeline workers are agent-agnostic. Needs a design pass first. |
 | `ai-coding-factory-0kk` | **Worker knowledge context and outcome capture.** Go adapters for approved source snapshots, obsidian-wiki, Memsearch and Graphify, with provenance and size bounds. No raw transcript capture. Deduplicate captures from interactive sessions and independent workers. |
 
-Suggested order: dogfood intake, then `yth`, then `vu6`, then `qg6`, then `0kk`.
+Suggested order: dogfood intake, then `6nq` (or earlier if Copilot credits stay unavailable, since the pipeline workers need it), then `yth`, `vu6`, `qg6`, `0kk`.
 
 ## 6. Validation commands
 ```bash

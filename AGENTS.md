@@ -139,3 +139,14 @@ Single-context: `GLOSSARY.md` and `docs/adr/` at the root, created lazily. See `
 ### Factory intake
 
 `/factory-intake <request>` grills, specs and tickets a request, then runs each ticket through the supervised factory. See `docs/intake-workflow.md`.
+
+## Agent portability
+
+This repository must work the same from Claude Code, Codex, OpenCode and Copilot, so any agent can pick up where another stopped.
+
+- **Instructions**: this `AGENTS.md` is the single source. Do not add per-agent instruction files (`CLAUDE.md`, `.cursor/rules`, etc.).
+- **Skills**: canonical copies live in `.agents/skills/`. Claude Code reads them through links in `.claude/skills/`; Codex, OpenCode and Copilot read `.agents/skills/` directly.
+- **Subagent roles**: project roles are authored in `.apm/agents/*.agent.md` (APM local primitives; must be real files, APM skips symlinks). `apm install` deploys them, with the upstream profiles from `apm.yml`, to `.github/agents/` for Copilot. `.claude/agents/` and `.opencode/agents/` link to the `.apm/agents/` sources. Never hand-edit `.github/agents/` or `apm_modules/`: edit `.apm/agents/` and rerun `apm install`, then commit the regenerated `.github/agents/` files and `apm.lock.yaml`.
+- **Local agent state** (`.claude/*`, `.opencode/*` other than those links) is gitignored. Persistent project knowledge goes in `bd remember`, not agent-specific memory files.
+- **Handoff**: keep `HANDOFF.md` current before ending a long session, and reference Beads IDs instead of copying ticket bodies.
+- **Commit trailer**: name the agent that did the work (for example `Co-authored-by: Copilot` or `Co-Authored-By: Claude <noreply@anthropic.com>`). Commits still need explicit user authorization.

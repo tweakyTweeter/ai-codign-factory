@@ -39,12 +39,23 @@ an explicit dependency update or resolving without that lockfile can select
 new upstream content. Review agent changes before adopting them. Do not
 hand-edit deployed profiles, since APM manages their content.
 
+## Project-local profiles
+
+`.apm/agents/` holds this repository's own, agent-neutral roles. APM treats
+them as local primitives: `apm install` deploys them to `.github/agents/`
+alongside the upstream profiles and records them under
+`local_deployed_files` in `apm.lock.yaml`. Claude Code and OpenCode use the
+same sources through links in `.claude/agents/` and `.opencode/agents/`.
+Edit the `.apm/agents/` source (a real file, not a symlink, since APM skips
+symlinks) and rerun `apm install`; never edit the deployed copy.
+
 ## Installed profiles
 
 Use `/agent` to browse the display names. The file identifiers are:
 
 | Area | Profile identifiers |
 | --- | --- |
+| Factory intake (project-local, from `.apm/agents/`) | `factory-producer`, `factory-principal-engineer` |
 | Team | `ai-team-producer`, `ai-team-dev`, `ai-team-qa` |
 | Planning and architecture | `implementation-plan`, `api-architect`, `principal-software-engineer` |
 | Governance and debugging | `agent-governance-reviewer`, `debug` |
