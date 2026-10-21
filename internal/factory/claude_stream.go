@@ -19,19 +19,17 @@ var claudeBuiltinPlugins = map[string]bool{
 }
 
 type claudeEvent struct {
-	Type       string            `json:"type"`
-	Subtype    string            `json:"subtype"`
-	Tools      []string          `json:"tools"`
-	MCPServers []json.RawMessage `json:"mcp_servers"`
-	Skills     []json.RawMessage `json:"skills"`
-	Plugins    []struct {
-		Source string `json:"source"`
-	} `json:"plugins"`
-	PermissionMode string `json:"permissionMode"`
-	Cwd            string `json:"cwd"`
-	Model          string `json:"model"`
-	Version        string `json:"claude_code_version"`
-	APIKeySource   string `json:"apiKeySource"`
+	Type           string          `json:"type"`
+	Subtype        string          `json:"subtype"`
+	Tools          json.RawMessage `json:"tools"`
+	MCPServers     json.RawMessage `json:"mcp_servers"`
+	Skills         json.RawMessage `json:"skills"`
+	Plugins        json.RawMessage `json:"plugins"`
+	PermissionMode string          `json:"permissionMode"`
+	Cwd            string          `json:"cwd"`
+	Model          string          `json:"model"`
+	Version        string          `json:"claude_code_version"`
+	APIKeySource   string          `json:"apiKeySource"`
 	RateLimitInfo  *struct {
 		Status string `json:"status"`
 	} `json:"rate_limit_info"`
@@ -41,20 +39,46 @@ type claudeEvent struct {
 	Denials        json.RawMessage `json:"permission_denials"`
 }
 
-func checkClaudeInit(e claudeEvent, in LaunchInputs) error {
-	got, want := slices.Clone(e.Tools), slices.Clone(in.Tools.Available)
-	slices.Sort(got)
-	slices.Sort(want)
-	if !slices.Equal(got, want) {
-		return fmt.Errorf("Claude reported tools %v, want %v", got, want)
+// initArray decodes an init field that must be present and a JSON array. A
+// missing, null or non-array value proves nothing and is rejected.
+func initArray(name string, raw json.RawMessage, v any) error {
+	if t := bytes.TrimSpace(raw); len(t) == 0 || t[0] != '[' {
+		return fmt.Errorf("Claude init did not report %s as an array", name)
 	}
-	if len(e.MCPServers) != 0 {
+	if err := json.Unmarshal(raw, v); err != nil {
+		return fmt.Errorf("Claude init %s: %w", name, err)
+	}
+	return nil
+}
+
+func checkClaudeInit(e claudeEvent, in LaunchInputs) error {
+	var tools []string
+	var mcp, skills []json.RawMessage
+	var plugins []struct {
+		Source string `json:"source"`
+	}
+	for _, f := range []struct {
+		name string
+		raw  json.RawMessage
+		v    any
+	}{{"tools", e.Tools, &tools}, {"mcp_servers", e.MCPServers, &mcp}, {"skills", e.Skills, &skills}, {"plugins", e.Plugins, &plugins}} {
+		if err := initArray(f.name, f.raw, f.v); err != nil {
+			return err
+		}
+	}
+	want := slices.Clone(in.Tools.Available)
+	slices.Sort(tools)
+	slices.Sort(want)
+	if !slices.Equal(tools, want) {
+		return fmt.Errorf("Claude reported tools %v, want %v", tools, want)
+	}
+	if len(mcp) != 0 {
 		return errors.New("Claude loaded MCP servers")
 	}
-	if len(e.Skills) != 0 {
+	if len(skills) != 0 {
 		return errors.New("Claude loaded skills")
 	}
-	for _, p := range e.Plugins {
+	for _, p := range plugins {
 		if !claudeBuiltinPlugins[p.Source] {
 			return fmt.Errorf("Claude loaded non-built-in plugin %q", p.Source)
 		}
@@ -65,10 +89,39 @@ func checkClaudeInit(e claudeEvent, in LaunchInputs) error {
 	if e.Cwd != in.Launch {
 		return fmt.Errorf("Claude cwd %q, want private launch dir", e.Cwd)
 	}
-	if strings.Contains(e.APIKeySource, "ANTHROPIC_API_KEY") || e.APIKeySource == "apiKeyHelper" {
-		return errors.New("Claude authenticated with an API key, not the subscription")
+	// Subscription (OAuth) login reports "none"; every other value, including
+	// a missing one, is some kind of key and fails closed.
+	if e.APIKeySource != "none" {
+		return fmt.Errorf("Claude did not authenticate with the subscription (apiKeySource %q)", e.APIKeySource)
 	}
 	return nil
+}
+
+// claudeDenials keeps only the tool name and target path of each permission
+// denial; tool inputs can carry file contents and are never recorded.
+func claudeDenials(raw json.RawMessage) ([]PermissionDenial, error) {
+	if t := bytes.TrimSpace(raw); len(t) == 0 || bytes.Equal(t, []byte("null")) {
+		return nil, nil
+	}
+	var entries []struct {
+		Tool  string `json:"tool_name"`
+		Input struct {
+			FilePath string `json:"file_path"`
+			Path     string `json:"path"`
+		} `json:"tool_input"`
+	}
+	if err := initArray("permission_denials", raw, &entries); err != nil {
+		return nil, err
+	}
+	denials := make([]PermissionDenial, 0, len(entries))
+	for _, d := range entries {
+		path := d.Input.FilePath
+		if path == "" {
+			path = d.Input.Path
+		}
+		denials = append(denials, PermissionDenial{Tool: d.Tool, Path: path})
+	}
+	return denials, nil
 }
 
 // claudeFinal parses stream-json. The init event must prove the isolation the
@@ -122,13 +175,17 @@ func claudeFinal(raw []byte, in LaunchInputs, out *PhaseOutcome) (string, error)
 				return fail("isolation_mismatch", errors.New("repeated Claude init event"))
 			}
 		case "rate_limit_event":
-			if e.RateLimitInfo != nil && e.RateLimitInfo.Status != "allowed" && e.RateLimitInfo.Status != "allowed_warning" {
+			if e.RateLimitInfo != nil && e.RateLimitInfo.Status != "" && e.RateLimitInfo.Status != "allowed" && e.RateLimitInfo.Status != "allowed_warning" {
 				out.RateLimited = true
 			}
 		case "result":
 			done = true
-			out.PermissionDenials = e.Denials
-			if bytes.Equal(bytes.TrimSpace(e.APIErrorStatus), []byte("429")) {
+			denials, err := claudeDenials(e.Denials)
+			if err != nil {
+				return fail("stream_invalid", err)
+			}
+			out.PermissionDenials = denials
+			if s := bytes.TrimSpace(e.APIErrorStatus); bytes.Equal(s, []byte("429")) || bytes.Equal(s, []byte(`"429"`)) {
 				out.RateLimited = true
 			}
 			if e.Subtype != "success" || e.IsError == nil || *e.IsError || e.Result == nil || strings.TrimSpace(*e.Result) == "" {
@@ -141,7 +198,7 @@ func claudeFinal(raw []byte, in LaunchInputs, out *PhaseOutcome) (string, error)
 		return fail("stream_invalid", err)
 	}
 	if !seenInit {
-		return fail("isolation_mismatch", errors.New("Claude stream missing init event"))
+		return fail("stream_invalid", errors.New("Claude stream is empty"))
 	}
 	if !done {
 		return fail(unsuccessful(), errors.New("Claude stream missing result event"))

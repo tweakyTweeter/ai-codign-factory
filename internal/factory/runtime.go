@@ -46,14 +46,44 @@ type ManifestBase struct {
 // PhaseOutcome is post-run evidence written to the unsealed
 // adapter-outcome.json by drivers that record outcomes (not Copilot).
 type PhaseOutcome struct {
-	Runtime           string          `json:"runtime"`
-	FailureReason     string          `json:"failure_reason,omitempty"`
-	Model             string          `json:"model,omitempty"`
-	ClaudeVersion     string          `json:"claude_code_version,omitempty"`
-	APIKeySource      string          `json:"api_key_source,omitempty"`
-	RateLimited       bool            `json:"rate_limited,omitempty"`
-	PermissionDenials json.RawMessage `json:"permission_denials,omitempty"`
-	Residue           []string        `json:"residue,omitempty"`
+	Runtime           string             `json:"runtime"`
+	FailureReason     string             `json:"failure_reason,omitempty"`
+	Model             string             `json:"model,omitempty"`
+	ClaudeVersion     string             `json:"claude_code_version,omitempty"`
+	APIKeySource      string             `json:"api_key_source,omitempty"`
+	RateLimited       bool               `json:"rate_limited,omitempty"`
+	PermissionDenials []PermissionDenial `json:"permission_denials,omitempty"`
+	Residue           []string           `json:"residue,omitempty"`
+}
+
+// PermissionDenial is the recorded part of a denied tool call: the tool and
+// its target path only. Tool inputs (file contents, patterns) are never kept.
+type PermissionDenial struct {
+	Tool string `json:"tool"`
+	Path string `json:"path"`
+}
+
+// classifyRunFailure names the failure of a non-Copilot run before the
+// generic isolation_mismatch default applies. Integrity or seal violations
+// are isolation_mismatch; truncated output is an invalid stream; when the
+// child failed, the driver's stream parser classifies the captured output
+// (for example a usage limit) and its content is discarded. The first reason
+// set wins. Copilot (out.Runtime == "") is never touched.
+func classifyRunFailure(d Driver, raw []byte, in LaunchInputs, out *PhaseOutcome, execErr error, truncated bool, integrity error) {
+	if out.Runtime == "" || out.FailureReason != "" {
+		return
+	}
+	if integrity != nil {
+		out.FailureReason = "isolation_mismatch"
+		return
+	}
+	if truncated {
+		out.FailureReason = "stream_invalid"
+		return
+	}
+	if execErr != nil {
+		_, _ = d.Final(raw, in, out)
+	}
 }
 
 // Driver is the runtime-specific half of a supervised phase adapter. RunPhase
@@ -284,17 +314,19 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 	if err != nil && ctx.Err() != nil && out.Runtime != "" {
 		out.FailureReason = "timeout"
 	}
-	err = errors.Join(err, verifyIntegrity(ctx, metadata))
+	integrity := verifyIntegrity(ctx, metadata)
 	for name, want := range map[string]string{"inputs": inputSeal, "profile-snapshot": profileSeal} {
 		got, checkErr := artifactDigest(ctx, launch, name)
 		if checkErr != nil || got != want {
-			err = errors.Join(err, checkErr, fmt.Errorf("%s modified private %s", d.Label(), name))
+			integrity = errors.Join(integrity, checkErr, fmt.Errorf("%s modified private %s", d.Label(), name))
 		}
 	}
 	if s, sErr := artifactDigest(ctx, launch, settings.SealDir); sErr != nil || s != settingsSeal {
-		err = errors.Join(err, sErr, fmt.Errorf("%s launch settings changed", d.Label()))
+		integrity = errors.Join(integrity, sErr, fmt.Errorf("%s launch settings changed", d.Label()))
 	}
 	raw := stdout.Bytes()
+	classifyRunFailure(d, raw, in, out, err, capOut.truncated || diagnostics.truncated, integrity)
+	err = errors.Join(err, integrity)
 	if capOut.truncated || diagnostics.truncated {
 		err = errors.Join(err, fmt.Errorf("%s output/diagnostics truncated", d.Label()))
 	}
