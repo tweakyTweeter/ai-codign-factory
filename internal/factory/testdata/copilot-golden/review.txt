@@ -51,3 +51,26 @@ copied explicit profile; explicit runtime tool policy overrides profile tool dec
 
 == env
 fixture env: COPILOT_ALLOW_ALL=false COPILOT_DIR=/golden/copilot-home COPILOT_HOME=/golden/copilot-home
+fixture env sentinels: FACTORY_GOLDEN_SENTINEL=absent GOLDEN_PASSTHROUGH_SENTINEL=present
+== manifest
+{
+  "launch_dir": "<LAUNCH>",
+  "launch_settings": "{\"disableAllHooks\":true}\n",
+  "notice": "copied explicit profile; explicit runtime tool policy overrides profile tool declarations; cwd is a private temp launch dir outside any checkout with disableAllHooks=true; global extensions still load; no live run evidence directory grant; only candidate and private input/profile copies are exposed, automatic system-temp access disabled; private inputs/profile/settings are checked for mutation; write approval is not recursively path-scoped; not a sandbox",
+  "policy": {
+    "agent": "explicit",
+    "allow_tools": [],
+    "available_tools": [
+      "view",
+      "rg",
+      "glob"
+    ],
+    "executable": "<EXE>",
+    "role": "review",
+    "source_profile": "<PROFILE>",
+    "version": 1
+  },
+  "resolved_source_profile": "<PROFILE>",
+  "source_profile_sha256": "<SHA256>",
+  "worktree": "<WORKTREE>"
+}

@@ -13,7 +13,7 @@ import (
 
 var updateGolden = flag.Bool("update-golden", false, "rewrite testdata golden files")
 
-var sha256Hex = regexp.MustCompile(`[0-9a-f]{64}`)
+var sha256Hex = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
 
 // normalizeEvidence replaces run-specific paths (longest first) and digests so
 // evidence can be compared byte for byte across runs.
@@ -65,6 +65,10 @@ func TestCopilotAdapter_GoldenEvidence(t *testing.T) {
 	}
 	t.Setenv("COPILOT_HOME", "/golden/copilot-home")
 	t.Setenv("COPILOT_DIR", "/golden/copilot-home")
+	// Sentinels (never real tokens): FACTORY_* must be stripped from the child,
+	// other host variables must pass through.
+	t.Setenv("FACTORY_GOLDEN_SENTINEL", "x")
+	t.Setenv("GOLDEN_PASSTHROUGH_SENTINEL", "x")
 	c, req := setupController(t), workflowRequest()
 	source := filepath.Join(t.TempDir(), "explicit.agent.md")
 	if err := os.WriteFile(source, []byte("---\nname: explicit\n---\nExplicit agent source.\n"), 0600); err != nil {
@@ -109,19 +113,42 @@ func TestCopilotAdapter_GoldenEvidence(t *testing.T) {
 		sort.Strings(keys)
 		launch, _ := manifest["launch_dir"].(string)
 		repl := map[string]string{launch: "<LAUNCH>", r.Worktree: "<WORKTREE>", r.Dir: "<RUN>", os.Args[0]: "<EXE>", source: "<PROFILE>"}
-		envLine := ""
+		// macOS resolves /var to /private/var; pin both spellings to one token.
+		if resolved, err := filepath.EvalSymlinks(source); err == nil {
+			repl[resolved] = "<PROFILE>"
+		}
+		notice, ok := manifest["notice"].(string)
+		if !ok {
+			t.Fatalf("%s: adapter.json has no string \"notice\"", p.Name)
+		}
+		launchSettings, ok := manifest["launch_settings"].(string)
+		if !ok {
+			t.Fatalf("%s: adapter.json has no string \"launch_settings\"", p.Name)
+		}
+		envLine, sentinelLine := "", ""
 		for _, line := range strings.Split(read("copilot.stderr.log"), "\n") {
 			if strings.HasPrefix(line, "fixture env: ") {
 				envLine = line
 			}
+			if strings.HasPrefix(line, "fixture env sentinels: ") {
+				sentinelLine = line
+			}
+		}
+		if sentinelLine == "" {
+			t.Fatalf("%s: fixture did not report env sentinels", p.Name)
+		}
+		pretty, err := json.MarshalIndent(manifest, "", "  ")
+		if err != nil {
+			t.Fatal(err)
 		}
 		got := strings.Join([]string{
 			"== argv", normalizeEvidence(read("adapter-argv.json"), repl),
 			"== prompt", normalizeEvidence(read("adapter-prompt.txt"), repl),
 			"== manifest keys", strings.Join(keys, "\n"),
-			"== notice", manifest["notice"].(string),
-			"== launch_settings", manifest["launch_settings"].(string),
-			"== env", envLine,
+			"== notice", notice,
+			"== launch_settings", launchSettings,
+			"== env", envLine, sentinelLine,
+			"== manifest", normalizeEvidence(string(pretty), repl),
 		}, "\n") + "\n"
 		goldenCompare(t, filepath.Join("testdata", "copilot-golden", p.Name+".txt"), got)
 	}
