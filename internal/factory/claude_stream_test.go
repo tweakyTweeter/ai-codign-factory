@@ -283,3 +283,41 @@ func TestClassifyRunFailure(t *testing.T) {
 		t.Fatalf("Copilot outcome changed: %+v", out)
 	}
 }
+
+// residueDriver is a Claude driver double whose PostRun audit fails, as a
+// real audit would when the child leaves residue or litters its launch dir.
+type residueDriver struct{ claudeDriver }
+
+func (residueDriver) PostRun(string, map[string]string, *PhaseOutcome) error {
+	return errors.New("residue left in launch dir")
+}
+
+func TestFinishRunPostRunOutranksStream(t *testing.T) {
+	usage, in := claudeStreamFixture(t, func(i, r map[string]any) []map[string]any {
+		r["is_error"] = true
+		r["api_error_status"] = 429
+		return []map[string]any{i, r}
+	})
+	for name, truncated := range map[string]bool{"usage limit": false, "truncated": true} {
+		t.Run(name, func(t *testing.T) {
+			out := &PhaseOutcome{Runtime: "claude"}
+			err := finishRun(residueDriver{}, t.TempDir(), nil, usage, in, out, errors.New("exit status 1"), truncated, nil)
+			if out.FailureReason != "isolation_mismatch" {
+				t.Fatalf("reason %q, want isolation_mismatch", out.FailureReason)
+			}
+			for _, part := range []string{"exit status 1", "residue left in launch dir"} {
+				if err == nil || !strings.Contains(err.Error(), part) {
+					t.Fatalf("error %v lacks %q", err, part)
+				}
+			}
+		})
+	}
+	out := &PhaseOutcome{}
+	err := finishRun(copilotDriver{}, t.TempDir(), nil, usage, in, out, errors.New("exit status 1"), true, nil)
+	if want := "exit status 1\nCopilot output/diagnostics truncated"; err == nil || err.Error() != want {
+		t.Fatalf("Copilot error %q, want %q", err, want)
+	}
+	if !reflect.DeepEqual(*out, PhaseOutcome{}) {
+		t.Fatalf("Copilot outcome changed: %+v", out)
+	}
+}

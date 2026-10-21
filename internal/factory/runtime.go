@@ -86,6 +86,24 @@ func classifyRunFailure(d Driver, raw []byte, in LaunchInputs, out *PhaseOutcome
 	}
 }
 
+// finishRun runs the driver's post-run audit, classifies a failed run and
+// joins every error in a fixed order. PostRun runs first so that its audit
+// counts as isolation evidence and outranks stream classification, like the
+// integrity and seal checks.
+func finishRun(d Driver, launch string, before map[string]string, raw []byte, in LaunchInputs, out *PhaseOutcome, execErr error, truncated bool, integrity error) error {
+	postErr := d.PostRun(launch, before, out)
+	classifyRunFailure(d, raw, in, out, execErr, truncated, errors.Join(integrity, postErr))
+	err := errors.Join(execErr, integrity)
+	if truncated {
+		err = errors.Join(err, fmt.Errorf("%s output/diagnostics truncated", d.Label()))
+	}
+	err = errors.Join(err, postErr)
+	if err != nil && out.Runtime != "" && out.FailureReason == "" {
+		out.FailureReason = "isolation_mismatch"
+	}
+	return err
+}
+
 // Driver is the runtime-specific half of a supervised phase adapter. RunPhase
 // owns the shared isolation, sealing and contract logic.
 type Driver interface {
@@ -325,15 +343,7 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 		integrity = errors.Join(integrity, sErr, fmt.Errorf("%s launch settings changed", d.Label()))
 	}
 	raw := stdout.Bytes()
-	classifyRunFailure(d, raw, in, out, err, capOut.truncated || diagnostics.truncated, integrity)
-	err = errors.Join(err, integrity)
-	if capOut.truncated || diagnostics.truncated {
-		err = errors.Join(err, fmt.Errorf("%s output/diagnostics truncated", d.Label()))
-	}
-	err = errors.Join(err, d.PostRun(launch, before, out))
-	if err != nil && out.Runtime != "" && out.FailureReason == "" {
-		out.FailureReason = "isolation_mismatch"
-	}
+	err = finishRun(d, launch, before, raw, in, out, err, capOut.truncated || diagnostics.truncated, integrity)
 	err = errors.Join(err, writeExclusive(filepath.Join(output, d.Name()+".stderr.log"), stderr.Bytes()))
 	writeErr := writeExclusive(filepath.Join(output, d.Name()+".jsonl"), raw)
 	if err != nil || writeErr != nil {
