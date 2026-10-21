@@ -10,6 +10,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
+	"unicode"
 )
 
 type claudeDriver struct{}
@@ -37,17 +39,35 @@ func (claudeDriver) LaunchSettings(launch string) (LaunchSettings, error) {
 }
 
 // stripFrontmatter drops a leading YAML block: Claude receives the role body as
-// appended system prompt text, not as an agent definition.
+// appended system prompt text, not as an agent definition. It handles LF and
+// CRLF line endings, an empty block, and a closing fence at EOF. Input with no
+// opening fence, or an opening fence without a closing one, is returned as is.
 func stripFrontmatter(b []byte) []byte {
 	s := string(b)
-	if !strings.HasPrefix(s, "---\n") {
+	var rest string
+	switch {
+	case strings.HasPrefix(s, "---\r\n"):
+		rest = s[5:]
+	case strings.HasPrefix(s, "---\n"):
+		rest = s[4:]
+	default:
 		return b
 	}
-	end := strings.Index(s[4:], "\n---\n")
-	if end < 0 {
-		return b
+	for pos := 0; pos <= len(rest); {
+		nl := strings.IndexByte(rest[pos:], '\n')
+		line, next := rest[pos:], len(rest)+1
+		if nl >= 0 {
+			line, next = rest[pos:pos+nl], pos+nl+1
+		}
+		if strings.TrimSuffix(line, "\r") == "---" {
+			if next > len(rest) {
+				return nil
+			}
+			return []byte(strings.TrimLeft(rest[next:], "\r\n"))
+		}
+		pos = next
 	}
-	return []byte(strings.TrimLeft(s[4+end+5:], "\n"))
+	return b
 }
 
 func (claudeDriver) ProfileLaunchCopy(launch, agent string, profile []byte) (string, error) {
@@ -61,13 +81,37 @@ func (claudeDriver) ProfileLaunchCopy(launch, agent string, profile []byte) (str
 
 func scopedRule(tool, root string) string { return tool + "(/" + root + "/**)" }
 
+// unsafeRuleRoot reports whether a root path could change the meaning of a
+// permission rule: glob metacharacters, rule delimiters, whitespace or control
+// characters. Such paths are rejected, never escaped.
+func unsafeRuleRoot(path string) bool {
+	return strings.ContainsFunc(path, func(r rune) bool {
+		return strings.ContainsRune("*?[]{}(),", r) || unicode.IsSpace(r) || unicode.IsControl(r)
+	})
+}
+
+// safeScopeRoots returns the given and resolved forms of path, failing closed
+// when any form could widen or break a rule.
+func safeScopeRoots(label, path string) ([]string, error) {
+	forms, err := scopeRoots(path)
+	if err != nil {
+		return nil, err
+	}
+	for _, form := range forms {
+		if unsafeRuleRoot(form) {
+			return nil, fmt.Errorf("claude %s path %q contains characters unsafe in a permission rule (glob, bracket, parenthesis, comma, whitespace or control); use a path without them", label, form)
+		}
+	}
+	return forms, nil
+}
+
 func (claudeDriver) Tools(p PhasePolicy, roots ToolRoots) (DriverTools, error) {
 	if p.Copilot != nil {
 		return DriverTools{}, errors.New("claude runtime requires a version 2 policy")
 	}
 	t := DriverTools{Available: []string{"Read", "Grep", "Glob"}}
-	for _, root := range []string{roots.Worktree, roots.Inputs, roots.Profile} {
-		forms, err := scopeRoots(root)
+	for _, root := range []struct{ label, path string }{{"worktree", roots.Worktree}, {"inputs", roots.Inputs}, {"profile", roots.Profile}} {
+		forms, err := safeScopeRoots(root.label, root.path)
 		if err != nil {
 			return DriverTools{}, err
 		}
@@ -79,7 +123,7 @@ func (claudeDriver) Tools(p PhasePolicy, roots ToolRoots) (DriverTools, error) {
 	}
 	if slices.Contains(p.Grants, "write") {
 		t.Available = append(t.Available, "Edit", "Write")
-		forms, err := scopeRoots(roots.Worktree)
+		forms, err := safeScopeRoots("worktree", roots.Worktree)
 		if err != nil {
 			return DriverTools{}, err
 		}
@@ -108,12 +152,17 @@ func (claudeDriver) Env() ([]string, bool, []string) {
 	return env, false, dropped
 }
 
+const claudeVersionTimeout = 30 * time.Second
+
 func (claudeDriver) Version(ctx context.Context, p PhasePolicy, launch string, env []string, inherit bool) (string, error) {
-	var out bytes.Buffer
+	ctx, cancel := context.WithTimeout(ctx, claudeVersionTimeout)
+	defer cancel()
+	var out, errOut bytes.Buffer
 	w := &cappedWriter{dst: &out, remaining: 4096}
-	code, err := executeStreamsEnv(ctx, launch, []string{p.Executable, "--version"}, env, w, w, nil, false, inherit)
+	ew := &cappedWriter{dst: &errOut, remaining: 4096}
+	code, err := executeStreamsEnv(ctx, launch, []string{p.Executable, "--version"}, env, w, ew, nil, false, inherit)
 	if err != nil || code != 0 || w.truncated {
-		return "", errors.Join(err, fmt.Errorf("claude --version failed (exit %d)", code))
+		return "", errors.Join(err, fmt.Errorf("claude --version failed (exit %d): %s", code, strings.TrimSpace(errOut.String())))
 	}
 	return strings.TrimSpace(out.String()), nil
 }

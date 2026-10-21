@@ -160,12 +160,12 @@ Exactly one `{"type":"result"}` event, with `subtype == "success"`,
 final answer. `permission_denials` from the result event are copied into
 `adapter.json` evidence.
 
-`Notice`: "private launch dir outside any checkout; no user/project/local
-settings sources (no user hooks, plugins, permissions or global CLAUDE.md);
-disableAllHooks; no MCP; no skills; exact tool list with dontAsk; Dev writes
-limited to the worktree; built-in plugins (agents-md, telemetry, plugin-authoring)
-still load; auto-memory points at an empty per-launch-dir folder; reads limited
-to the worktree, private inputs and profile; not a sandbox".
+`Notice`: "private launch dir outside any checkout; no user/project/local settings sources (no user hooks, plugins, permissions or global CLAUDE.md); disableAllHooks; no MCP; no skills; exact tool list with dontAsk; reads limited to the worktree, private inputs and profile; Dev writes limited to the worktree; env is an exact allowlist; built-in plugins (agents-md, telemetry, plugin-authoring) still load; auto-memory points at an empty per-launch-dir folder that is removed after the run; isolation verified from the init event; not a sandbox".
+
+Path rule: before any allow rule is built, `Tools` rejects (fails closed, failure_reason `policy`)
+any worktree, inputs or profile path, in its given or symlink-resolved form, that contains one of
+`* ? [ ] { } ( ) ,`, any whitespace or any control character. Such characters would widen or break a
+permission rule; paths are never escaped or quoted.
 
 Verified by probe against Claude Code 2.1.306: with these flags, the `init` event
 reports only the granted tools, no MCP servers, no skills and only the built-in plugins,
