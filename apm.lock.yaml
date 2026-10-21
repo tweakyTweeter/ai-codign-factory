@@ -235,7 +235,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:86751eb2c90d816021cfca9d609e937a1fb8eada4760fdcaaf0030e85b4a8abd
+  content_hash: sha256:ef39e4d84df21a406f4d8e0c5718400a778e8f0eb46759d8ccee8158fe765711
 - kind: project-relative
   target: claude
   value: .claude/agents/factory-principal-engineer.md
@@ -253,7 +253,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:b3687e983e11d7109441c3a6bc0eb5b2e226d55808e3551558533c9f8edcb3f1
+  content_hash: sha256:55d7411dfc740325b52ee835bf36718f154951ad002f03909a8ce45eca0ab929
 - kind: project-relative
   target: claude
   value: .claude/agents/factory-qa.md
@@ -262,7 +262,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:8af1ba0204001c911c9ab6a2f2ea23f1c0e295c1ee042c0e75b4ff77fe7d253f
+  content_hash: sha256:4472058c7dca30d00623a75abd3ea619e560030b5f7092a9d19ff37cacf55ae0
 - kind: project-relative
   target: claude
   value: .claude/agents/factory-reviewer.md
@@ -271,7 +271,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:045487389c83f20703257c0e067ea976bbd02d75c41b849b5960b8769b733851
+  content_hash: sha256:f6e8dbe910c516935258a508cfe1abb5e6b71610c7c9fb417aa297cb90cca7a8
 - kind: project-relative
   target: copilot
   value: .github/agents/agent-governance-reviewer.agent.md
@@ -334,7 +334,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:86751eb2c90d816021cfca9d609e937a1fb8eada4760fdcaaf0030e85b4a8abd
+  content_hash: sha256:ef39e4d84df21a406f4d8e0c5718400a778e8f0eb46759d8ccee8158fe765711
 - kind: project-relative
   target: copilot
   value: .github/agents/factory-principal-engineer.agent.md
@@ -352,7 +352,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:b3687e983e11d7109441c3a6bc0eb5b2e226d55808e3551558533c9f8edcb3f1
+  content_hash: sha256:55d7411dfc740325b52ee835bf36718f154951ad002f03909a8ce45eca0ab929
 - kind: project-relative
   target: copilot
   value: .github/agents/factory-qa.agent.md
@@ -361,7 +361,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:8af1ba0204001c911c9ab6a2f2ea23f1c0e295c1ee042c0e75b4ff77fe7d253f
+  content_hash: sha256:4472058c7dca30d00623a75abd3ea619e560030b5f7092a9d19ff37cacf55ae0
 - kind: project-relative
   target: copilot
   value: .github/agents/factory-reviewer.agent.md
@@ -370,7 +370,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:045487389c83f20703257c0e067ea976bbd02d75c41b849b5960b8769b733851
+  content_hash: sha256:f6e8dbe910c516935258a508cfe1abb5e6b71610c7c9fb417aa297cb90cca7a8
 - kind: project-relative
   target: copilot
   value: .github/agents/implementation-plan.agent.md
@@ -460,7 +460,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:86751eb2c90d816021cfca9d609e937a1fb8eada4760fdcaaf0030e85b4a8abd
+  content_hash: sha256:ef39e4d84df21a406f4d8e0c5718400a778e8f0eb46759d8ccee8158fe765711
 - kind: project-relative
   target: opencode
   value: .opencode/agents/factory-principal-engineer.md
@@ -478,7 +478,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:b3687e983e11d7109441c3a6bc0eb5b2e226d55808e3551558533c9f8edcb3f1
+  content_hash: sha256:55d7411dfc740325b52ee835bf36718f154951ad002f03909a8ce45eca0ab929
 - kind: project-relative
   target: opencode
   value: .opencode/agents/factory-qa.md
@@ -487,7 +487,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:8af1ba0204001c911c9ab6a2f2ea23f1c0e295c1ee042c0e75b4ff77fe7d253f
+  content_hash: sha256:4472058c7dca30d00623a75abd3ea619e560030b5f7092a9d19ff37cacf55ae0
 - kind: project-relative
   target: opencode
   value: .opencode/agents/factory-reviewer.md
@@ -496,7 +496,7 @@ deployments:
   owners:
   - .
   active_owner: .
-  content_hash: sha256:045487389c83f20703257c0e067ea976bbd02d75c41b849b5960b8769b733851
+  content_hash: sha256:f6e8dbe910c516935258a508cfe1abb5e6b71610c7c9fb417aa297cb90cca7a8
 local_deployed_files:
 - .claude/agents/factory-dev.md
 - .claude/agents/factory-principal-engineer.md
@@ -514,18 +514,18 @@ local_deployed_files:
 - .opencode/agents/factory-qa.md
 - .opencode/agents/factory-reviewer.md
 local_deployed_file_hashes:
-  .claude/agents/factory-dev.md: sha256:86751eb2c90d816021cfca9d609e937a1fb8eada4760fdcaaf0030e85b4a8abd
+  .claude/agents/factory-dev.md: sha256:ef39e4d84df21a406f4d8e0c5718400a778e8f0eb46759d8ccee8158fe765711
   .claude/agents/factory-principal-engineer.md: sha256:33746948e000a3bd6042e43e97d47953c24138529f1a0f75c3b36e0560b2d627
-  .claude/agents/factory-producer.md: sha256:b3687e983e11d7109441c3a6bc0eb5b2e226d55808e3551558533c9f8edcb3f1
-  .claude/agents/factory-qa.md: sha256:8af1ba0204001c911c9ab6a2f2ea23f1c0e295c1ee042c0e75b4ff77fe7d253f
-  .claude/agents/factory-reviewer.md: sha256:045487389c83f20703257c0e067ea976bbd02d75c41b849b5960b8769b733851
-  .github/agents/factory-dev.agent.md: sha256:86751eb2c90d816021cfca9d609e937a1fb8eada4760fdcaaf0030e85b4a8abd
+  .claude/agents/factory-producer.md: sha256:55d7411dfc740325b52ee835bf36718f154951ad002f03909a8ce45eca0ab929
+  .claude/agents/factory-qa.md: sha256:4472058c7dca30d00623a75abd3ea619e560030b5f7092a9d19ff37cacf55ae0
+  .claude/agents/factory-reviewer.md: sha256:f6e8dbe910c516935258a508cfe1abb5e6b71610c7c9fb417aa297cb90cca7a8
+  .github/agents/factory-dev.agent.md: sha256:ef39e4d84df21a406f4d8e0c5718400a778e8f0eb46759d8ccee8158fe765711
   .github/agents/factory-principal-engineer.agent.md: sha256:33746948e000a3bd6042e43e97d47953c24138529f1a0f75c3b36e0560b2d627
-  .github/agents/factory-producer.agent.md: sha256:b3687e983e11d7109441c3a6bc0eb5b2e226d55808e3551558533c9f8edcb3f1
-  .github/agents/factory-qa.agent.md: sha256:8af1ba0204001c911c9ab6a2f2ea23f1c0e295c1ee042c0e75b4ff77fe7d253f
-  .github/agents/factory-reviewer.agent.md: sha256:045487389c83f20703257c0e067ea976bbd02d75c41b849b5960b8769b733851
-  .opencode/agents/factory-dev.md: sha256:86751eb2c90d816021cfca9d609e937a1fb8eada4760fdcaaf0030e85b4a8abd
+  .github/agents/factory-producer.agent.md: sha256:55d7411dfc740325b52ee835bf36718f154951ad002f03909a8ce45eca0ab929
+  .github/agents/factory-qa.agent.md: sha256:4472058c7dca30d00623a75abd3ea619e560030b5f7092a9d19ff37cacf55ae0
+  .github/agents/factory-reviewer.agent.md: sha256:f6e8dbe910c516935258a508cfe1abb5e6b71610c7c9fb417aa297cb90cca7a8
+  .opencode/agents/factory-dev.md: sha256:ef39e4d84df21a406f4d8e0c5718400a778e8f0eb46759d8ccee8158fe765711
   .opencode/agents/factory-principal-engineer.md: sha256:33746948e000a3bd6042e43e97d47953c24138529f1a0f75c3b36e0560b2d627
-  .opencode/agents/factory-producer.md: sha256:b3687e983e11d7109441c3a6bc0eb5b2e226d55808e3551558533c9f8edcb3f1
-  .opencode/agents/factory-qa.md: sha256:8af1ba0204001c911c9ab6a2f2ea23f1c0e295c1ee042c0e75b4ff77fe7d253f
-  .opencode/agents/factory-reviewer.md: sha256:045487389c83f20703257c0e067ea976bbd02d75c41b849b5960b8769b733851
+  .opencode/agents/factory-producer.md: sha256:55d7411dfc740325b52ee835bf36718f154951ad002f03909a8ce45eca0ab929
+  .opencode/agents/factory-qa.md: sha256:4472058c7dca30d00623a75abd3ea619e560030b5f7092a9d19ff37cacf55ae0
+  .opencode/agents/factory-reviewer.md: sha256:f6e8dbe910c516935258a508cfe1abb5e6b71610c7c9fb417aa297cb90cca7a8

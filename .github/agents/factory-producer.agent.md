@@ -48,3 +48,5 @@ If you are started as the `producer` phase of the supervised pipeline rather
 than from `/factory-intake`, nobody will interview you. Return a concise plan:
 the approach, affected files, test seams, and any limitations. Do not wait for
 questions.
+In a pipeline phase you have read-only file tools only and run no commands;
+the intake rule about builds or tests does not apply there.
