@@ -16,6 +16,9 @@ type Repo struct {
 	Root   string `json:"root"`
 	Common string `json:"common_git_dir"`
 	State  string `json:"state_dir"`
+	// Worktrees holds run worktrees. It sits beside the repository, outside
+	// the common git dir, because agents (Claude Code) refuse writes under .git.
+	Worktrees string `json:"worktrees_dir"`
 }
 
 func Discover(ctx context.Context, path string) (Repo, error) {
@@ -35,7 +38,36 @@ func Discover(ctx context.Context, path string) (Repo, error) {
 	if err != nil {
 		return Repo{}, err
 	}
-	return Repo{Root: root, Common: common, State: filepath.Join(common, "factory")}, nil
+	return Repo{Root: root, Common: common, State: filepath.Join(common, "factory"), Worktrees: worktreesDir(common)}, nil
+}
+
+// worktreesDir derives the run worktrees root from the common git dir, so every
+// linked worktree of a repository agrees: /x/proj/.git -> /x/proj.factory-runs,
+// bare /x/proj.git -> /x/proj.git.factory-runs.
+func worktreesDir(common string) string {
+	base := common
+	if filepath.Base(common) == ".git" {
+		base = filepath.Dir(common)
+	}
+	return filepath.Join(filepath.Dir(base), filepath.Base(base)+".factory-runs")
+}
+
+// checkRunWorktreePath fails closed unless worktree is an absolute, clean path
+// outside the common git dir with no ".git" component.
+func checkRunWorktreePath(common, worktree string) error {
+	if !filepath.IsAbs(worktree) || filepath.Clean(worktree) != worktree {
+		return fmt.Errorf("run worktree path %q must be absolute and clean", worktree)
+	}
+	rel, err := filepath.Rel(common, worktree)
+	if err != nil || rel == "." || !strings.HasPrefix(rel, "..") {
+		return fmt.Errorf("run worktree path %q is inside the common git dir %q; refusing to create it", worktree, common)
+	}
+	for _, part := range strings.Split(worktree, string(filepath.Separator)) {
+		if part == ".git" {
+			return fmt.Errorf("run worktree path %q contains a .git component; refusing to create it", worktree)
+		}
+	}
+	return nil
 }
 
 func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
