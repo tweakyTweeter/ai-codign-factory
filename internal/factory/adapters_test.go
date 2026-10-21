@@ -326,7 +326,7 @@ func TestPrivateLaunchDir_FailsClosedInsideCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", checkout)
-	if dir, err := privateLaunchDir(); err == nil {
+	if dir, err := privateLaunchDir("factory-copilot-launch-"); err == nil {
 		t.Fatalf("launch dir inside checkout accepted: %s", dir)
 	}
 	if entries, _ := os.ReadDir(checkout); len(entries) != 1 {

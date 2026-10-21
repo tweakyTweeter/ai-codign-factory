@@ -150,7 +150,7 @@ func TestCopilotInputs_PrivateCopiesRebaseReferencesAndExcludeLiveState(t *testi
 	_, r := reviewRun(t)
 	launch := t.TempDir()
 	path := filepath.Join(r.Dir, "outputs", "review", "context.json")
-	inputs, err := copilotInputs(t.Context(), launch, path, r.Worktree)
+	inputs, err := privateInputs(t.Context(), launch, path, r.Worktree)
 	if err != nil {
 		t.Fatal(err)
 	}

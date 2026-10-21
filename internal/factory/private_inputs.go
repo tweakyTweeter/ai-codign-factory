@@ -12,7 +12,7 @@ import (
 
 // Copy only sealed inputs and completed evidence, never the journal, active
 // outputs, sibling runs or candidate. References point into the private copy.
-func copilotInputs(ctx context.Context, launch, contextPath, worktree string) (string, error) {
+func privateInputs(ctx context.Context, launch, contextPath, worktree string) (string, error) {
 	data, err := readBounded(contextPath)
 	if err != nil {
 		return "", err
