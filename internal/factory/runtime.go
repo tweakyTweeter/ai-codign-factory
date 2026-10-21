@@ -7,7 +7,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -404,16 +406,25 @@ type PhaseRuntime struct {
 // InspectPhasePolicy validates a phase's adapter policy for doctor. It returns
 // nil for phases that are not policy-driven adapters.
 func InspectPhasePolicy(ctx context.Context, phase, role string, argv []string) (*PhaseRuntime, error) {
-	path := ""
-	for i, a := range argv {
-		if a == "--policy" && i+1 < len(argv) {
-			path = argv[i+1]
-		}
-	}
-	if path == "" {
+	// Only `<factory> agent|copilot ...` is policy-driven. The args are parsed
+	// exactly like internal/cli/adapters.go so that detection cannot drift from
+	// what the runtime accepts (--policy P, --policy=P, -policy P, -policy=P).
+	if len(argv) < 2 || (argv[1] != "agent" && argv[1] != "copilot") {
 		return nil, nil
 	}
-	b, err := readBounded(path)
+	fs := flag.NewFlagSet(argv[1], flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	path := fs.String("policy", "", "")
+	if err := fs.Parse(argv[2:]); err != nil {
+		return nil, fmt.Errorf("phase %s: %w", phase, err)
+	}
+	if fs.NArg() != 0 {
+		return nil, fmt.Errorf("phase %s: unexpected adapter arguments", phase)
+	}
+	if *path == "" {
+		return nil, fmt.Errorf("phase %s: --policy has no value", phase)
+	}
+	b, err := readBounded(*path)
 	if err != nil {
 		return nil, fmt.Errorf("phase %s policy: %w", phase, err)
 	}

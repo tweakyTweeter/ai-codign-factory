@@ -178,6 +178,9 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		runtimes := []factory.PhaseRuntime{}
 		if config.Workflow != nil {
 			for _, p := range config.Workflow.Phases {
+				if p.Role == "specialist" && p.Profile != *profile {
+					continue
+				}
 				pr, err := factory.InspectPhasePolicy(ctx, p.Name, p.Role, p.Command.Argv)
 				if err != nil {
 					return err

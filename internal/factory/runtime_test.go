@@ -38,9 +38,13 @@ func TestRunPhase_CopilotEntryRejectsOtherRuntime(t *testing.T) {
 func TestInspectPhasePolicy(t *testing.T) {
 	dir := t.TempDir()
 	profile := filepath.Join(dir, "p.md")
-	os.WriteFile(profile, []byte("x"), 0600)
+	if err := os.WriteFile(profile, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	policy := filepath.Join(dir, "policy.json")
-	os.WriteFile(policy, []byte(`{"version":2,"runtime":"claude","executable":"`+os.Args[0]+`","role":"qa","agent":"p","source_profile":"`+profile+`","grants":["read"]}`), 0600)
+	if err := os.WriteFile(policy, []byte(`{"version":2,"runtime":"claude","executable":"`+os.Args[0]+`","role":"qa","agent":"p","source_profile":"`+profile+`","grants":["read"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	got, err := InspectPhasePolicy(t.Context(), "qa", "qa", []string{"/abs/factory", "agent", "--policy", policy})
 	if err != nil || got == nil || got.Runtime != "claude" || !strings.Contains(got.Version, "2.1.306") {
 		t.Fatalf("inspect: %+v: %v", got, err)
@@ -50,5 +54,42 @@ func TestInspectPhasePolicy(t *testing.T) {
 	}
 	if _, err := InspectPhasePolicy(t.Context(), "dev", "dev", []string{"/abs/factory", "agent", "--policy", policy}); err == nil {
 		t.Fatal("role mismatch accepted by doctor")
+	}
+}
+
+func TestInspectPhasePolicy_FlagSpellings(t *testing.T) {
+	dir := t.TempDir()
+	profile := filepath.Join(dir, "p.md")
+	if err := os.WriteFile(profile, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	policy := filepath.Join(dir, "policy.json")
+	if err := os.WriteFile(policy, []byte(`{"version":2,"runtime":"claude","executable":"`+os.Args[0]+`","role":"qa","agent":"p","source_profile":"`+profile+`","grants":["read"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"--policy", policy}, {"--policy=" + policy}, {"-policy", policy}, {"-policy=" + policy}} {
+		{
+			argv := append([]string{"/abs/factory", "agent"}, args...)
+			got, err := InspectPhasePolicy(t.Context(), "qa", "qa", argv)
+			if err != nil || got == nil || got.Runtime != "claude" {
+				t.Fatalf("%v: %+v: %v", argv, got, err)
+			}
+			if _, err := InspectPhasePolicy(t.Context(), "dev", "dev", argv); err == nil {
+				t.Fatalf("%v: role mismatch accepted", argv)
+			}
+		}
+	}
+	for _, args := range [][]string{{"--policy"}, {"--policy", ""}, {"--policy="}, {"-policy="}, {}, {"--bogus", "x"}, {"--policy", policy, "extra"}} {
+		for _, sub := range []string{"agent", "copilot"} {
+			argv := append([]string{"/abs/factory", sub}, args...)
+			if got, err := InspectPhasePolicy(t.Context(), "qa", "qa", argv); err == nil {
+				t.Fatalf("%v accepted: %+v", argv, got)
+			}
+		}
+	}
+	for _, argv := range [][]string{{"othertool", "--policy", "/nope"}, {"/abs/factory", "doctor", "--policy", "/nope"}, {"/abs/factory"}, nil} {
+		if got, err := InspectPhasePolicy(t.Context(), "x", "qa", argv); got != nil || err != nil {
+			t.Fatalf("%v treated as policy-driven: %+v: %v", argv, got, err)
+		}
 	}
 }
