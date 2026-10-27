@@ -22,6 +22,15 @@ func TestMain(m *testing.M) {
 	if os.Getenv("GO_WANT_COPILOT_FIXTURE") == "1" && len(os.Args) > 1 && os.Args[1] == "--agent" {
 		os.Exit(copilotFixture())
 	}
+	if isClaudeFixtureInvocation(os.Args) {
+		os.Exit(claudeFixture())
+	}
+	// A flag-shaped argv[1] that is neither a go test flag nor a recognised
+	// fixture call means dispatch drifted; never run the suite inside a phase.
+	if len(os.Args) > 1 && strings.HasPrefix(os.Args[1], "-") && !strings.HasPrefix(os.Args[1], "-test.") {
+		fmt.Fprintln(os.Stderr, "unrecognised fixture invocation:", os.Args[1:])
+		os.Exit(97)
+	}
 	goleak.VerifyTestMain(m)
 }
 
@@ -42,6 +51,15 @@ func fixture(mode string, args []string) int {
 		_, err := executeGroup(context.Background(), os.Getenv("FACTORY_WORKTREE"), cmd.Argv, os.Environ(), os.Stdout, nil, false)
 		if err != nil {
 			return 62
+		}
+		return 0
+	case "agent":
+		if len(args) != 1 {
+			return 60
+		}
+		if err := RunPhase(context.Background(), args[0], ""); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 61
 		}
 		return 0
 	case "adapter":
@@ -79,6 +97,14 @@ func fixture(mode string, args []string) int {
 	case "check":
 		b, err := os.ReadFile("worker.txt")
 		if err != nil || string(b) != "implemented" {
+			return 24
+		}
+		fmt.Print("check passed\n")
+		return 0
+	case "check-live":
+		// Live Claude smoke test: a real model may end the file with a newline.
+		b, err := os.ReadFile("worker.txt")
+		if err != nil || strings.TrimSpace(string(b)) != "implemented" {
 			return 24
 		}
 		fmt.Print("check passed\n")

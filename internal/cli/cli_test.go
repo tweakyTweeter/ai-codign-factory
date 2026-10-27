@@ -173,3 +173,106 @@ func TestRun_HelpAndUsageErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentCommand_RequiresPolicy(t *testing.T) {
+	_, err := invoke(t, "agent")
+	var usage *UsageError
+	if !errors.As(err, &usage) {
+		t.Fatalf("agent without --policy: want usage error, got %v", err)
+	}
+}
+
+func TestAgentCommand_RejectsPositionalArgs(t *testing.T) {
+	_, err := invoke(t, "agent", "--policy", "/nope", "extra")
+	var usage *UsageError
+	if !errors.As(err, &usage) {
+		t.Fatalf("extra positional: want usage error, got %v", err)
+	}
+}
+
+// doctorWorkflow writes a workflow config whose phases are copilot-policy
+// driven. policies maps phase role to the role written into its policy file;
+// extra phases may be added by the caller via specialist.
+func doctorWorkflow(t *testing.T, qaPolicyRole string, specialist bool) string {
+	t.Helper()
+	root := gitRepo(t)
+	if _, err := invoke(t, "init", "--repo", root); err != nil {
+		t.Fatal(err)
+	}
+	repo, err := factory.Discover(t.Context(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(root, "p.md")
+	if err := os.WriteFile(profile, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	phase := func(name, role, policyRole string, tools, allow string) factory.Phase {
+		pol := filepath.Join(root, name+"-policy.json")
+		body := `{"version":1,"executable":"` + os.Args[0] + `","role":"` + policyRole + `","agent":"a","source_profile":"` + profile + `","available_tools":` + tools + `,"allow_tools":` + allow + `}`
+		if err := os.WriteFile(pol, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+		return factory.Phase{Name: name, Role: role, Command: factory.Command{Argv: []string{os.Args[0], "copilot", "-policy=" + pol}, Timeout: "5s"}}
+	}
+	ro := `["view","rg","glob"]`
+	phases := []factory.Phase{phase("producer", "producer", "producer", ro, "[]")}
+	if specialist {
+		mine := phase("mine", "specialist", "specialist", ro, "[]")
+		mine.Profile = "mine"
+		other := phase("other", "specialist", "specialist", ro, "[]")
+		other.Profile = "other"
+		other.Command.Argv = []string{os.Args[0], "copilot", "--policy", filepath.Join(root, "missing.json")}
+		phases = append(phases, mine, other)
+	}
+	phases = append(phases,
+		phase("dev", "dev", "dev", `["view","rg","glob","create","edit","apply_patch"]`, `["write"]`),
+		phase("qa", "qa", qaPolicyRole, ro, "[]"),
+		phase("review", "review", "review", ro, "[]"))
+	data, err := json.Marshal(factory.Config{Version: 1, BeadsArgv: []string{os.Args[0]}, Checks: []factory.Command{{Argv: []string{os.Args[0]}, Timeout: "5s"}}, Workflow: &factory.Workflow{Phases: phases}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo.State, "config.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func TestDoctor_PhaseRuntimesForCopilotPolicies(t *testing.T) {
+	root := doctorWorkflow(t, "qa", false)
+	out, err := invoke(t, "doctor", "--repo", root)
+	if err != nil {
+		t.Fatalf("doctor: %s: %v", out, err)
+	}
+	var got struct {
+		PhaseRuntimes []factory.PhaseRuntime `json:"phase_runtimes"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || len(got.PhaseRuntimes) != 4 || got.PhaseRuntimes[0].Runtime != "copilot" {
+		t.Fatalf("phase_runtimes: %s: %v", out, err)
+	}
+}
+
+func TestDoctor_InvalidPolicyFails(t *testing.T) {
+	root := doctorWorkflow(t, "dev", false)
+	if out, err := invoke(t, "doctor", "--repo", root); err == nil {
+		t.Fatalf("doctor accepted a qa phase with a dev policy: %s", out)
+	}
+}
+
+func TestDoctor_ProfileSkipsOtherSpecialistPolicies(t *testing.T) {
+	root := doctorWorkflow(t, "qa", true)
+	if out, err := invoke(t, "doctor", "--repo", root, "--profile", "other"); err == nil {
+		t.Fatalf("selected specialist with a missing policy accepted: %s", out)
+	}
+	if out, err := invoke(t, "doctor", "--repo", root, "--profile", "mine"); err != nil {
+		t.Fatalf("other profile's policy inspected: %s: %v", out, err)
+	}
+}
+
+func TestHelpListsAgent(t *testing.T) {
+	out, err := invoke(t, "help")
+	if err != nil || !strings.Contains(out, "copilot, agent,") {
+		t.Fatalf("help: %q: %v", out, err)
+	}
+}

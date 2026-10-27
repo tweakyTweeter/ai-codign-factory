@@ -13,8 +13,8 @@ func adapter(ctx context.Context, name string, args []string, stdout, stderr io.
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	policy, report, fingerprint := new(string), new(string), new(string)
-	if name == "copilot" {
-		fs.StringVar(policy, "policy", "", "explicit Copilot tool/profile policy JSON")
+	if name == "copilot" || name == "agent" {
+		fs.StringVar(policy, "policy", "", "explicit phase adapter policy JSON (v1 Copilot or v2 runtime-neutral)")
 	} else {
 		fs.StringVar(report, "report", "", "canonical roborev schema v2 JSON report (native execution unsupported)")
 		fs.StringVar(fingerprint, "fingerprint", "", "explicit fingerprint actually reviewed by this report")
@@ -29,11 +29,15 @@ func adapter(ctx context.Context, name string, args []string, stdout, stderr io.
 		return &UsageError{errors.New("unexpected adapter arguments")}
 	}
 	var err error
-	if name == "copilot" {
+	if name == "copilot" || name == "agent" {
 		if *policy == "" {
 			return &UsageError{errors.New("--policy is required")}
 		}
-		err = factory.Copilot(ctx, *policy)
+		if name == "agent" {
+			err = factory.RunPhase(ctx, *policy, "")
+		} else {
+			err = factory.Copilot(ctx, *policy)
+		}
 	} else {
 		if *report == "" || *fingerprint == "" {
 			return &UsageError{errors.New("--report and --fingerprint are required")}

@@ -1,8 +1,8 @@
 # Runtime phase adapters: shared runner + Claude driver
 
 - **Date:** 2026-10-21
-- **Beads:** feature `ai-coding-factory-6nq`; brainstorming session `ai-coding-factory-r36`
-- **Status:** spec approved; stress-tested (`ai-coding-factory-rfz`, results at the end)
+- **Beads:** feature `acf-23`; brainstorming session `acf-28`
+- **Status:** spec approved; stress-tested (`acf-34`, results at the end)
 
 ## Problem
 
@@ -160,12 +160,14 @@ Exactly one `{"type":"result"}` event, with `subtype == "success"`,
 final answer. `permission_denials` from the result event are copied into
 `adapter.json` evidence.
 
-`Notice`: "private launch dir outside any checkout; no user/project/local
-settings sources (no user hooks, plugins, permissions or global CLAUDE.md);
-disableAllHooks; no MCP; no skills; exact tool list with dontAsk; Dev writes
-limited to the worktree; built-in plugins (agents-md, telemetry, plugin-authoring)
-still load; auto-memory points at an empty per-launch-dir folder; reads limited
-to the worktree, private inputs and profile; not a sandbox".
+`Notice`: "private launch dir outside any checkout; no user/project/local settings sources (no user hooks, plugins, permissions or global CLAUDE.md); disableAllHooks; no MCP; no skills; exact tool list with dontAsk; reads limited to the worktree, private inputs and profile; Dev writes limited to the worktree; env is an exact allowlist; built-in plugins (agents-md, telemetry, plugin-authoring) still load; auto-memory points at an empty per-launch-dir folder that is removed after the run; isolation verified from the init event; not a sandbox".
+
+Path rule: before any allow rule is built, `Tools` rejects (fails closed, failure_reason `policy`)
+any worktree, inputs or profile path, in its given or symlink-resolved form, that contains one of
+`* ? [ ] { } ( ) , \`, any whitespace, any control character or invalid UTF-8. Such characters would
+widen, redirect or break a permission rule (`\` is the gitignore escape). Each form must also be
+absolute and canonical (`filepath.Clean(form) == form`: no `.` or `..` component, no `//`, no trailing
+`/`) and must not be `/`. Paths are never escaped or quoted.
 
 Verified by probe against Claude Code 2.1.306: with these flags, the `init` event
 reports only the granted tools, no MCP servers, no skills and only the built-in plugins,
@@ -195,7 +197,7 @@ Validation (strict decode; unknown fields rejected):
 - `grants` must be non-empty, contain no duplicates, and use only `read` and `write`.
 - `grants` must include `read`.
 - `write` is allowed only when the role is `dev`.
-- `model` is optional and must match `^[A-Za-z0-9._-]{1,64}$`. Claude passes it as `--model`; the Copilot
+- `model` is optional and must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`. Claude passes it as `--model`; the Copilot
   driver rejects a v2 policy that sets it instead of silently ignoring it. When it is omitted, Claude uses the account
   default. Either way, the model actually used, read from the stream's `system/init` event, is recorded in
   `adapter.json`. The example QA and Review policies pin a model.
@@ -304,7 +306,7 @@ row and "Copilot workers"), `docs/supervised-workflow.md` (examples), and
 
 ## Stress Test Results: runtime phase adapters
 
-Session `ai-coding-factory-rfz`, 2026-10-21. Live probes were run against Claude Code 2.1.306.
+Session `acf-34`, 2026-10-21. Live probes were run against Claude Code 2.1.306.
 
 ### Resolved Decisions
 - **Read scope:** Read, Grep and Glob are limited, for every role, to the worktree, the private inputs and the profile snapshot.
@@ -335,7 +337,7 @@ Session `ai-coding-factory-rfz`, 2026-10-21. Live probes were run against Claude
 - Testing: golden tests first (item 0), `PostRun` tests (item 7), and an expanded live smoke test.
 
 ### Deferred / Parking Lot
-- `ai-coding-factory-kx1`: apply the same env allowlist to the Copilot adapter. It is kept out of this refactor so
+- `acf-35`: apply the same env allowlist to the Copilot adapter. It is kept out of this refactor so
   Copilot behaviour does not change.
 - Policy-level `env_allow` (for example, a corporate proxy): only when needed.
 - Agent SDK fallback if a future CLI stops exposing init-event details or path-scoped rules.

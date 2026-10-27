@@ -59,12 +59,22 @@ func executeGroup(ctx context.Context, dir string, argv, env []string, out io.Wr
 }
 
 func executeStreams(ctx context.Context, dir string, argv, env []string, stdout, stderr io.Writer, started func(int) error, ownGroup bool) (int, error) {
+	return executeStreamsEnv(ctx, dir, argv, env, stdout, stderr, started, ownGroup, true)
+}
+
+// executeStreamsEnv runs argv with env merged over the adapter environment when
+// inherit is true, or with exactly env (nothing inherited) when it is false.
+func executeStreamsEnv(ctx context.Context, dir string, argv, env []string, stdout, stderr io.Writer, started func(int) error, ownGroup, inherit bool) (int, error) {
 	if err := ctx.Err(); err != nil {
 		return -1, err
 	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = dir
-	cmd.Env = mergedEnv(env)
+	if inherit {
+		cmd.Env = mergedEnv(env)
+	} else {
+		cmd.Env = append([]string{}, env...)
+	}
 	cmd.Stdin = nil
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: ownGroup}

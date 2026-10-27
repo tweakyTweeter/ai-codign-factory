@@ -150,7 +150,7 @@ func TestCopilotInputs_PrivateCopiesRebaseReferencesAndExcludeLiveState(t *testi
 	_, r := reviewRun(t)
 	launch := t.TempDir()
 	path := filepath.Join(r.Dir, "outputs", "review", "context.json")
-	inputs, err := copilotInputs(t.Context(), launch, path, r.Worktree)
+	inputs, err := privateInputs(t.Context(), launch, path, r.Worktree)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestCopilotInputs_PrivateCopiesRebaseReferencesAndExcludeLiveState(t *testi
 	if live.Run.Dir != inputs || live.Run.Worktree != r.Worktree {
 		t.Fatalf("incorrect rebased paths: %+v", live.Run)
 	}
-	for _, name := range []string{"worktree", "runs.sqlite", "human-review", "outputs/review/result.json"} {
+	for _, name := range []string{"runs.sqlite", "human-review", "outputs/review/result.json"} {
 		if _, err := os.Stat(filepath.Join(inputs, name)); !os.IsNotExist(err) {
 			t.Fatalf("live/current state copied: %s: %v", name, err)
 		}
@@ -182,5 +182,30 @@ func TestCopilotInputs_PrivateCopiesRebaseReferencesAndExcludeLiveState(t *testi
 	}
 	if err := verifyIntegrity(t.Context(), r); err != nil {
 		t.Fatalf("private copy modified original: %v", err)
+	}
+}
+
+// A worktree nested under the evidence source keeps its path, while other
+// source paths are rebased onto the private copy.
+func TestRebaseEvidenceJSON_LeavesNestedWorktreePathsUntouched(t *testing.T) {
+	source, dest := "/r/runs/abc", "/launch/inputs"
+	worktree := source + "/worktree"
+	in := `{"dir":"/r/runs/abc","log":"/r/runs/abc/check.log","wt":"/r/runs/abc/worktree","file":"/r/runs/abc/worktree/a.go","list":["/r/runs/abc/x"],"other":"/elsewhere"}`
+	out, err := rebaseEvidenceJSON([]byte(in), source, dest, worktree)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"dir": dest, "log": dest + "/check.log", "wt": worktree, "file": worktree + "/a.go", "other": "/elsewhere"}
+	for key, value := range want {
+		if got[key] != value {
+			t.Fatalf("%s = %v, want %q", key, got[key], value)
+		}
+	}
+	if list := got["list"].([]any); list[0] != dest+"/x" {
+		t.Fatalf("list not rebased: %v", list)
 	}
 }

@@ -41,3 +41,12 @@ The orchestrator will interview you one question at a time.
   write outside `$TMPDIR`, or change Beads state.
 - Do not run `factory` commands; the orchestrator owns the pipeline.
 - Prefer the smallest scope that solves the request; push back on scope creep.
+
+## When run as a pipeline phase
+
+If you are started as the `producer` phase of the supervised pipeline rather
+than from `/factory-intake`, nobody will interview you. Return a concise plan:
+the approach, affected files, test seams, and any limitations. Do not wait for
+questions.
+In a pipeline phase you have read-only file tools only and run no commands;
+the intake rule about builds or tests does not apply there.

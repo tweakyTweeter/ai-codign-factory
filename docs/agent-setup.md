@@ -2,8 +2,8 @@
 
 This repository uses APM to install two kinds of custom agent profiles:
 
-- **Project roles** in `.apm/agents/` (`factory-producer`,
-  `factory-principal-engineer`), deployed to Copilot, Claude Code and
+- **Project roles** in `.apm/agents/` (`factory-producer`, `factory-dev`,
+  `factory-qa`, `factory-reviewer`, `factory-principal-engineer`), deployed to Copilot, Claude Code and
   OpenCode.
 - **Selected upstream [Awesome Copilot](https://awesome-copilot.github.com/agents/)
   profiles**, deployed to Copilot only.
@@ -62,11 +62,12 @@ deployed copy.
 
 ## Installed profiles
 
-In Copilot, use `/agent` to browse the display names. Only the factory intake roles are also deployed to Claude Code and OpenCode. The file identifiers are:
+In Copilot, use `/agent` to browse the display names. The project roles are also deployed to Claude Code and OpenCode. The file identifiers are:
 
 | Area | Profile identifiers |
 | --- | --- |
 | Factory intake (project-local, from `.apm/agents/`) | `factory-producer`, `factory-principal-engineer` |
+| Factory pipeline phases (project-local; the `source_profile` of `factory agent` policies) | `factory-producer`, `factory-dev`, `factory-qa`, `factory-reviewer` |
 | Team | `ai-team-dev`, `ai-team-qa` |
 | Planning and architecture | `implementation-plan`, `api-architect` |
 | Governance and debugging | `agent-governance-reviewer`, `debug` |

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -90,6 +91,23 @@ func copilotFixture() int {
 		b, _ := json.Marshal(v)
 		content = string(b)
 	}
+	var copilotEnv []string
+	for _, entry := range os.Environ() {
+		if strings.HasPrefix(entry, "COPILOT_") {
+			copilotEnv = append(copilotEnv, entry)
+		}
+	}
+	sort.Strings(copilotEnv)
+	fmt.Fprintf(os.Stderr, "fixture env: %s\n", strings.Join(copilotEnv, " "))
+	var sentinels []string
+	for _, name := range []string{"FACTORY_GOLDEN_SENTINEL", "GOLDEN_PASSTHROUGH_SENTINEL"} {
+		if _, ok := os.LookupEnv(name); ok {
+			sentinels = append(sentinels, name+"=present")
+		} else {
+			sentinels = append(sentinels, name+"=absent")
+		}
+	}
+	fmt.Fprintf(os.Stderr, "fixture env sentinels: %s\n", strings.Join(sentinels, " "))
 	fmt.Fprintln(os.Stderr, "fixture diagnostic, deliberately not JSON")
 	event := map[string]any{"type": "assistant.message", "data": map[string]any{"phase": "final_answer", "content": content}}
 	b, _ := json.Marshal(event)
@@ -308,7 +326,7 @@ func TestPrivateLaunchDir_FailsClosedInsideCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", checkout)
-	if dir, err := privateLaunchDir(); err == nil {
+	if dir, err := privateLaunchDir("factory-copilot-launch-"); err == nil {
 		t.Fatalf("launch dir inside checkout accepted: %s", dir)
 	}
 	if entries, _ := os.ReadDir(checkout); len(entries) != 1 {
