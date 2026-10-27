@@ -1,5 +1,5 @@
 # Default agent for this repo when no workflow-specific agent is set.
-agent = 'copilot'
+agent = 'claude'
 review_guidelines = """"""
 # Default model for this repo when no workflow-specific model is set.
 model = ''
