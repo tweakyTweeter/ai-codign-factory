@@ -218,6 +218,7 @@ All of these passed at handoff time.
 
 ## 7. Key docs
 - `AGENTS.md`: agent rules and the `## Agent skills` block
+- `docs/architecture-overview.md`: one-page diagram of every plane and component (snapshot 2026-10-26)
 - `docs/architecture.md`, `docs/supervised-workflow.md`, `docs/human-approval.md`
 - `docs/intake-workflow.md`, `docs/agents/issue-tracker.md`, `docs/agents/domain.md`
 - `examples/USAGE.md`: full command reference, worker contract, safety and recovery
