@@ -1,8 +1,8 @@
 # Runtime phase adapters: shared runner + Claude driver
 
 - **Date:** 2026-10-21
-- **Beads:** feature `ai-coding-factory-6nq`; brainstorming session `ai-coding-factory-r36`
-- **Status:** spec approved; stress-tested (`ai-coding-factory-rfz`, results at the end)
+- **Beads:** feature `acf-23`; brainstorming session `acf-28`
+- **Status:** spec approved; stress-tested (`acf-34`, results at the end)
 
 ## Problem
 
@@ -306,7 +306,7 @@ row and "Copilot workers"), `docs/supervised-workflow.md` (examples), and
 
 ## Stress Test Results: runtime phase adapters
 
-Session `ai-coding-factory-rfz`, 2026-10-21. Live probes were run against Claude Code 2.1.306.
+Session `acf-34`, 2026-10-21. Live probes were run against Claude Code 2.1.306.
 
 ### Resolved Decisions
 - **Read scope:** Read, Grep and Glob are limited, for every role, to the worktree, the private inputs and the profile snapshot.
@@ -337,7 +337,7 @@ Session `ai-coding-factory-rfz`, 2026-10-21. Live probes were run against Claude
 - Testing: golden tests first (item 0), `PostRun` tests (item 7), and an expanded live smoke test.
 
 ### Deferred / Parking Lot
-- `ai-coding-factory-kx1`: apply the same env allowlist to the Copilot adapter. It is kept out of this refactor so
+- `acf-35`: apply the same env allowlist to the Copilot adapter. It is kept out of this refactor so
   Copilot behaviour does not change.
 - Policy-level `env_allow` (for example, a corporate proxy): only when needed.
 - Agent SDK fallback if a future CLI stops exposing init-event details or path-scoped rules.

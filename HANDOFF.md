@@ -99,7 +99,7 @@ Conventions (must keep):
 | Beads integration | `beads.go` | Claim, notes and close, all with `--sandbox` |
 | Docs | `README.md`, `docs/architecture.md`, `docs/supervised-workflow.md`, `docs/agent-setup.md`, `docs/external-runtimes.md`, `examples/USAGE.md` | |
 
-### Committed (`979bc7c feat(factory): add skill-driven intake and human decision waiter`, Beads `ai-coding-factory-ay3`)
+### Committed (`979bc7c feat(factory): add skill-driven intake and human decision waiter`, Beads `acf-21`)
 
 | Feature | Where |
 |---|---|
@@ -109,7 +109,7 @@ Conventions (must keep):
 | Tracker and domain contracts for the Matt Pocock skills (Beads-backed) | `docs/agents/issue-tracker.md`, `docs/agents/domain.md` |
 | Intake documentation and the skill-mapping table | `docs/intake-workflow.md`, plus updates to `AGENTS.md`, `README.md`, `examples/USAGE.md` and `docs/supervised-workflow.md` |
 
-### Committed: runtime-neutral phase adapters (branch `feat/runtime-phase-adapters`, Beads epic `ai-coding-factory-68m` (feature bead `ai-coding-factory-6nq`), Claude slice complete; Task 11 bead `ai-coding-factory-sur`)
+### Committed: runtime-neutral phase adapters (branch `feat/runtime-phase-adapters`, Beads epic `acf-37` (feature bead `acf-23`), Claude slice complete; Task 11 bead `acf-47`)
 
 | Change | Where |
 |---|---|
@@ -130,7 +130,7 @@ Known limit: a repository whose path, or whose parent directory's path (or `TMPD
 
 `816ac62 chore: remove per-tool agent configs and add beads showcase` removed `CLAUDE.md` and the `.claude/`, `.codex/` and `.cursor/` hook files, and added `.beads/showcase/`.
 
-### Committed: agent-agnostic intake (Beads `ai-coding-factory-7ir`, closed)
+### Committed: agent-agnostic intake (Beads `acf-22`, closed)
 
 | Change | Where |
 |---|---|
@@ -200,12 +200,12 @@ How the skills map:
 ### Open Beads milestones (`bd ready`)
 | ID | Goal |
 |---|---|
-| `ai-coding-factory-yth` | **Unattended supervision and serialized integration.** Run the factory as a durable service or daemon: a queue of ready beads, restart-safe, with integrations serialized. Humans still gate review acceptance and Git integration. |
-| `ai-coding-factory-vu6` | **Live status and controls.** A Go-owned local API or dashboard that exposes phase, logs, cancellation and recovery next to Scotty. It must not take over Beads ownership or imply integration authority, and it must fail closed. |
-| `ai-coding-factory-qg6` | **Restricted native roborev execution with provenance.** A foreground restricted launch that cannot widen permissions or mutate hooks or config. It captures the canonical report with origin and freshness provenance, and encodes the verdict in the result rather than in the process exit code. |
-| `ai-coding-factory-6nq` | **Runtime adapters.** Claude slice is done (see section 3). Remaining: `codex exec` and `opencode run` drivers behind the same `Driver` interface (Claude slice delivered under epic `68m`; `6nq` stays open for the `codex exec` / `opencode run` drivers behind the same `Driver` interface; minor spec follow-up `ai-coding-factory-68m.1` is open, and the ADR knowledge bead is `ai-coding-factory-x20`). |
-| `ai-coding-factory-kx1` | **Copilot env allowlist.** Deferred by design: the Copilot child still inherits the caller's environment, unlike Claude's exact allowlist. |
-| `ai-coding-factory-0kk` | **Worker knowledge context and outcome capture.** Go adapters for approved source snapshots, obsidian-wiki, Memsearch and Graphify, with provenance and size bounds. No raw transcript capture. Deduplicate captures from interactive sessions and independent workers. |
+| `acf-13` | **Unattended supervision and serialized integration.** Run the factory as a durable service or daemon: a queue of ready beads, restart-safe, with integrations serialized. Humans still gate review acceptance and Git integration. |
+| `acf-19` | **Live status and controls.** A Go-owned local API or dashboard that exposes phase, logs, cancellation and recovery next to Scotty. It must not take over Beads ownership or imply integration authority, and it must fail closed. |
+| `acf-16` | **Restricted native roborev execution with provenance.** A foreground restricted launch that cannot widen permissions or mutate hooks or config. It captures the canonical report with origin and freshness provenance, and encodes the verdict in the result rather than in the process exit code. |
+| `acf-23` | **Runtime adapters.** Claude slice is done (see section 3). Remaining: `codex exec` and `opencode run` drivers behind the same `Driver` interface (Claude slice delivered under epic `68m`; `6nq` stays open for the `codex exec` / `opencode run` drivers behind the same `Driver` interface; minor spec follow-up `acf-37.1` is open, and the ADR knowledge bead is `acf-36`). |
+| `acf-35` | **Copilot env allowlist.** Deferred by design: the Copilot child still inherits the caller's environment, unlike Claude's exact allowlist. |
+| `acf-12` | **Worker knowledge context and outcome capture.** Go adapters for approved source snapshots, obsidian-wiki, Memsearch and Graphify, with provenance and size bounds. No raw transcript capture. Deduplicate captures from interactive sessions and independent workers. |
 
 Suggested order: dogfood intake (and a first real Claude pipeline run with `examples/supervised-claude.json`), then the Codex/OpenCode drivers and `kx1`, then `yth`, `vu6`, `qg6`, `0kk`.
 

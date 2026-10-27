@@ -14,7 +14,7 @@ Policy v2 adds `runtime`, neutral `grants` and an optional `model`.
 
 **Tech Stack:** Go 1.x standard library (the existing module `github.com/anskumar/ai-coding-factory`), Claude Code CLI 2.1.306 (verified), APM 0.32 for the role profiles.
 
-**Sources:** spec `.internal/specs/2026-10-21-runtime-phase-adapters-design.md` (stress-tested); ADR `docs/adr/0001-claude-phase-worker-via-cli.md`; Beads: feature `ai-coding-factory-6nq`, brainstorm `ai-coding-factory-r36`, stress-test `ai-coding-factory-rfz`, follow-up `ai-coding-factory-kx1`.
+**Sources:** spec `.internal/specs/2026-10-21-runtime-phase-adapters-design.md` (stress-tested); ADR `docs/adr/0001-claude-phase-worker-via-cli.md`; Beads: feature `acf-23`, brainstorm `acf-28`, stress-test `acf-34`, follow-up `acf-35`.
 
 ## Global Constraints
 
@@ -2571,4 +2571,4 @@ opt-in smoke test against the real CLI (uses subscription quota).
 | Planted `CLAUDE.md`/`AGENTS.md` not auto-loaded | 4 (allowlist), 10 |
 | Live smoke test (opt-in) | 10 |
 | Docs | 11 |
-| Copilot env allowlist | **Deferred by design**: `ai-coding-factory-kx1` |
+| Copilot env allowlist | **Deferred by design**: `acf-35` |

@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-21
-- **Beads:** `ai-coding-factory-6nq` (feature), `ai-coding-factory-r36` (brainstorm), `ai-coding-factory-rfz` (stress-test)
+- **Beads:** `acf-23` (feature), `acf-28` (brainstorm), `acf-34` (stress-test)
 - **Spec:** `.internal/specs/2026-10-21-runtime-phase-adapters-design.md`
 
 ## Context
@@ -52,7 +52,7 @@ There were three ways to drive Claude:
   allowlist or parser is updated on purpose.
 - Usage-limit failures are classified but never retried by the adapter.
 - `Read` stays limited to the phase's paths, which is stronger than Copilot's `view`. Copilot's own environment
-  hardening is tracked separately (`ai-coding-factory-kx1`).
+  hardening is tracked separately (`acf-35`).
 - If a future CLI stops exposing init-event details or path-scoped rules, the Agent SDK becomes the fallback;
   that switch requires a new ADR.
 - Codex and OpenCode each become one driver. Codex needs its own decision on whether its always-present shell
