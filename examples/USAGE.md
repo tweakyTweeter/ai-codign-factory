@@ -43,9 +43,14 @@ to alternate worker commands; `--profile` selects exactly one. Optional
 
 The worker's working directory is an isolated Git worktree at the caller's
 explicit HEAD commit, on branch `factory/RUN_ID`. New runs create it at
-`<parent>/<repo>.factory-runs/<RUN_ID>`, derived from the common Git dir
-(`/x/proj/.git` gives `/x/proj.factory-runs`), not under `.git`, because Claude
-Code refuses writes under `.git`. The `.factory-runs` root must be a real
+`<parent>/<repo>.factory-runs/<RUN_ID>`, derived from the repository's main
+worktree (`/x/proj` gives `/x/proj.factory-runs`; a submodule checked out at
+`/super/sub` gives `/super/sub.factory-runs`), not under `.git`, because Claude
+Code refuses writes under `.git`. Every linked worktree of the repository uses
+the same root. The repository's parent directory must be writable, because the
+root is created there; otherwise the run stops before creating a worktree.
+Bare repositories (including worktrees linked to a bare repository) are
+unsupported and refused. The `.factory-runs` root must be a real
 directory owned by you with mode 0700 or stricter, and not a symlink;
 otherwise the run refuses and never repairs it. The journal is
 `<common-git-dir>/factory/runs.sqlite` and per-run evidence stays in

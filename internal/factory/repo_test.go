@@ -1,20 +1,50 @@
 package factory
 
 import (
+	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
-func TestWorktreesDir_SiblingOfRepositoryOutsideGit(t *testing.T) {
-	for common, want := range map[string]string{
-		"/x/proj/.git": "/x/proj.factory-runs",
-		"/x/proj.git":  "/x/proj.git.factory-runs",
+func TestWorktreesDir_SiblingOfMainWorktree(t *testing.T) {
+	for mainPath, want := range map[string]string{
+		"/x/proj":      "/x/proj.factory-runs",
+		"/super/sub":   "/super/sub.factory-runs",
+		"/x/store.git": "/x/store.git.factory-runs",
 	} {
-		if got := worktreesDir(common); got != want {
-			t.Fatalf("worktreesDir(%q) = %q, want %q", common, got, want)
+		if got := worktreesDir(mainPath); got != want {
+			t.Fatalf("worktreesDir(%q) = %q, want %q", mainPath, got, want)
 		}
+	}
+}
+
+func TestMainWorktree_ParsesFirstRecordAndRefusesBare(t *testing.T) {
+	got, err := mainWorktree("worktree /x/proj\x00HEAD abc\x00branch refs/heads/main\x00\x00worktree /y/linked\x00bare\x00\x00")
+	if err != nil || got != "/x/proj" {
+		t.Fatalf("mainWorktree = %q, %v; want /x/proj", got, err)
+	}
+	if _, err := mainWorktree("worktree /x/proj.git\x00bare\x00\x00"); err == nil || !strings.Contains(err.Error(), "bare") {
+		t.Fatalf("bare repository accepted: %v", err)
+	}
+	for _, bad := range []string{"", "HEAD abc\x00", "worktree \x00", "worktree relative\x00"} {
+		if got, err := mainWorktree(bad); err == nil {
+			t.Fatalf("malformed porcelain %q accepted as %q", bad, got)
+		}
+	}
+}
+
+func TestDiscover_RefusesLinkedWorktreeOfBareRepository(t *testing.T) {
+	c := setupController(t)
+	bare := filepath.Join(filepath.Dir(c.Repo.Root), "proj.git")
+	gitIn(t, filepath.Dir(c.Repo.Root), "clone", "-q", "--bare", c.Repo.Root, bare)
+	linked := filepath.Join(filepath.Dir(c.Repo.Root), "linked")
+	gitIn(t, bare, "worktree", "add", "-q", "--detach", linked, "HEAD")
+	if repo, err := Discover(t.Context(), linked); err == nil || !strings.Contains(err.Error(), "bare") {
+		t.Fatalf("Discover accepted a bare repository's worktree: %+v %v", repo, err)
 	}
 }
 
@@ -145,5 +175,79 @@ func TestRun_AcceptsPrivateWorktreesRootFromEarlierRun(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(c.Repo.Worktrees, r.ID)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// gitIn runs a fixture git command in dir with hooks and system config disabled.
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"}, args...)...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid",
+		"GIT_COMMITTER_NAME=fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid")
+	b, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("fixture git %v in %s: %s: %v", args, dir, b, err)
+	}
+	return strings.TrimSpace(string(b))
+}
+
+func TestRun_SubmoduleWorktreesRootBesideCheckoutOutsideGit(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub := filepath.Join(base, "sub-origin")
+	super := filepath.Join(base, "super")
+	for _, dir := range []string{sub, super} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		gitIn(t, dir, "init", "-q", "--initial-branch=main")
+	}
+	if err := os.WriteFile(filepath.Join(sub, "tracked.txt"), []byte("original\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, sub, "add", "tracked.txt")
+	gitIn(t, sub, "commit", "-q", "-m", "sub baseline")
+	gitIn(t, super, "-c", "protocol.file.allow=always", "submodule", "add", "-q", sub, "sub")
+	gitIn(t, super, "commit", "-q", "-m", "add submodule")
+
+	checkout := filepath.Join(super, "sub")
+	repo, err := Discover(t.Context(), checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(super, "sub.factory-runs"); repo.Worktrees != want {
+		t.Fatalf("Worktrees = %q, want %q (common %q)", repo.Worktrees, want, repo.Common)
+	}
+	store, err := Open(t.Context(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	c := Controller{Repo: repo, Store: store}
+	r, err := c.Run(t.Context(), request())
+	if err != nil || r.State != "awaiting_review" {
+		t.Fatalf("submodule run failed: %+v %v", r, err)
+	}
+	if want := filepath.Join(repo.Worktrees, r.ID); r.Worktree != want {
+		t.Fatalf("worktree = %q, want %q", r.Worktree, want)
+	}
+	for _, part := range strings.Split(r.Worktree, string(filepath.Separator)) {
+		if part == ".git" {
+			t.Fatalf("worktree has .git component: %q", r.Worktree)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(r.Worktree, "tracked.txt")); err != nil {
+		t.Fatalf("submodule worktree not checked out: %v", err)
+	}
+	linkedPath := filepath.Join(base, "sub-linked")
+	gitIn(t, checkout, "worktree", "add", "-q", "--detach", linkedPath, "HEAD")
+	linked, err := Discover(t.Context(), linkedPath)
+	if err != nil || linked.Common != repo.Common || linked.Worktrees != repo.Worktrees {
+		t.Fatalf("submodule linked worktree disagrees: main %+v linked %+v %v", repo, linked, err)
 	}
 }

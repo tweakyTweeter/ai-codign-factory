@@ -17,8 +17,9 @@ type Repo struct {
 	Root   string `json:"root"`
 	Common string `json:"common_git_dir"`
 	State  string `json:"state_dir"`
-	// Worktrees holds run worktrees. It sits beside the repository, outside
-	// the common git dir, because agents (Claude Code) refuse writes under .git.
+	// Worktrees holds run worktrees. It sits beside the repository's main
+	// worktree, outside any .git, because agents (Claude Code) refuse writes
+	// under .git.
 	Worktrees string `json:"worktrees_dir"`
 }
 
@@ -39,20 +40,82 @@ func Discover(ctx context.Context, path string) (Repo, error) {
 	if err != nil {
 		return Repo{}, err
 	}
-	return Repo{Root: root, Common: common, State: filepath.Join(common, "factory"), Worktrees: worktreesDir(common)}, nil
+	mainPath, err := mainWorktreePath(ctx, root, common)
+	if err != nil {
+		return Repo{}, err
+	}
+	return Repo{Root: root, Common: common, State: filepath.Join(common, "factory"), Worktrees: worktreesDir(mainPath)}, nil
 }
 
-// worktreesDir derives the run worktrees root from the common git dir, so every
-// linked worktree of a repository agrees: /x/proj/.git -> /x/proj.factory-runs,
-// bare /x/proj.git -> /x/proj.git.factory-runs. Bare repositories are not
-// supported in practice (Discover needs a work tree); with --separate-git-dir
-// the root sits beside the git store, not beside the work tree.
-func worktreesDir(common string) string {
-	base := common
-	if filepath.Base(common) == ".git" {
-		base = filepath.Dir(common)
+// mainWorktreePath resolves the repository's main worktree, which every linked
+// worktree agrees on. Git reports the common git dir itself as the main
+// worktree when the work tree is set by core.worktree (submodules, whose git
+// dir is <super>/.git/modules/<sub>), so in that case core.worktree from the
+// common config is used instead, resolved relative to the common git dir.
+func mainWorktreePath(ctx context.Context, root, common string) (string, error) {
+	list, err := gitOutput(ctx, root, "worktree", "list", "--porcelain", "-z")
+	if err != nil {
+		return "", err
 	}
-	return filepath.Join(filepath.Dir(base), filepath.Base(base)+".factory-runs")
+	mainPath, err := mainWorktree(list)
+	if err != nil {
+		return "", err
+	}
+	mainPath, err = filepath.EvalSymlinks(mainPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve main worktree: %w", err)
+	}
+	if mainPath != common {
+		return mainPath, nil
+	}
+	configured, err := gitOutput(ctx, root, "config", "--file", filepath.Join(common, "config"), "--default", "", "--get", "core.worktree")
+	if err != nil {
+		return "", err
+	}
+	if configured == "" {
+		// No separate work tree is recorded (for example --separate-git-dir
+		// seen from a linked worktree): the root sits beside the git store.
+		return mainPath, nil
+	}
+	if !filepath.IsAbs(configured) {
+		configured = filepath.Join(common, configured)
+	}
+	resolved, err := filepath.EvalSymlinks(configured)
+	if err != nil {
+		return "", fmt.Errorf("resolve core.worktree %q: %w", configured, err)
+	}
+	return resolved, nil
+}
+
+// mainWorktree returns the main worktree path from the output of
+// "git worktree list --porcelain -z", whose first record is always the main
+// worktree. It fails closed on malformed output and on bare repositories,
+// which are unsupported.
+func mainWorktree(porcelain string) (string, error) {
+	fields := strings.Split(porcelain, "\x00")
+	path, ok := strings.CutPrefix(fields[0], "worktree ")
+	if !ok || path == "" || !filepath.IsAbs(path) {
+		return "", fmt.Errorf("git worktree list: unexpected first record %q", fields[0])
+	}
+	for _, field := range fields[1:] {
+		if field == "" {
+			break // end of the main worktree record
+		}
+		if field == "bare" {
+			return "", fmt.Errorf("repository %q is bare; bare repositories are unsupported", path)
+		}
+	}
+	return filepath.Clean(path), nil
+}
+
+// worktreesDir derives the run worktrees root from the repository's main
+// worktree path (see mainWorktreePath), so every linked worktree agrees and a
+// submodule (whose common git dir is <super>/.git/modules/<sub>) still gets a
+// root outside any .git: /x/proj -> /x/proj.factory-runs,
+// /super/sub -> /super/sub.factory-runs. The main worktree's parent directory
+// must be writable; bare repositories are unsupported.
+func worktreesDir(mainWorktree string) string {
+	return filepath.Join(filepath.Dir(mainWorktree), filepath.Base(mainWorktree)+".factory-runs")
 }
 
 // checkRunWorktreePath fails closed unless worktree is an absolute, clean path

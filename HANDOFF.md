@@ -120,13 +120,14 @@ Conventions (must keep):
 | Init-event isolation checks, `failure_reason` classification, never retries | `claude_stream.go`, `runtime.go` |
 | Post-run launch-dir audit and `~/.claude/projects` residue handling (rmdir of empty trees only) | `claude_postrun.go` |
 | New post-run evidence file `adapter-outcome.json` (Claude only) | `runtime.go` |
-| Run worktrees now created at `<parent>/<repo>.factory-runs/<run-id>`, not under `.git`; the root must be a real 0700 directory owned by the user. Existing runs keep their stored paths. The factory never deletes worktrees | `repo.go`, `controller.go` |
+| Run worktrees now created at `<parent>/<repo>.factory-runs/<run-id>` (derived from the main worktree, so submodules work), not under `.git`; the root must be a real 0700 directory owned by the user. Existing runs keep their stored paths. The factory never deletes worktrees | `repo.go`, `controller.go` |
 | `factory doctor` reports `phase_runtimes`, parses `--policy` like the adapter, runs only `claude --version` | `internal/cli/cli.go`, `runtime.go` |
 | Pipeline roles `factory-producer/dev/qa/reviewer`; examples `claude-*-policy.json`, v2 Copilot policies, `supervised-claude.json` | `.apm/agents/`, `examples/` |
 | Opt-in live smoke test: `FACTORY_LIVE_CLAUDE=1 go test ./internal/factory -run ClaudeLive -count=1 -v` (subscription quota, real HOME) | `internal/factory/claude_live_test.go` |
 | Docs and ADR | `examples/USAGE.md`, `docs/architecture.md`, `docs/adr/0001-claude-phase-worker-via-cli.md` |
 
 Known limit: a repository whose path, or whose parent directory's path (or `TMPDIR`), contains whitespace or glob characters (`* ? [ ] { } ( ) ,`, backslash) cannot run Claude phases (`failure_reason=policy`).
+Known limit: the repository's parent directory must be writable (the `<repo>.factory-runs` root is created there), and bare repositories, including worktrees linked to one, are unsupported and refused.
 
 `816ac62 chore: remove per-tool agent configs and add beads showcase` removed `CLAUDE.md` and the `.claude/`, `.codex/` and `.cursor/` hook files, and added `.beads/showcase/`.
 
