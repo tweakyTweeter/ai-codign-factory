@@ -150,3 +150,12 @@ This repository must work the same from Claude Code, Codex, OpenCode and Copilot
 - **Local agent state** (`.claude/*`, `.opencode/*` other than deployed agents and skill links) is gitignored. Persistent project knowledge goes in `bd remember`, not agent-specific memory files.
 - **Handoff**: keep `HANDOFF.md` current before ending a long session, and reference Beads IDs instead of copying ticket bodies.
 - **Commit trailer**: name the agent that did the work (for example `Co-authored-by: Copilot` or `Co-Authored-By: Claude <noreply@anthropic.com>`). Commits still need explicit user authorization.
+
+## Bead IDs
+
+Beads in this repository use the prefix `acf-` with sequential numbers (`acf-37`, children `acf-37.3`).
+
+- Create every **top-level** bead with `scripts/bd-new` (same arguments as `bd create`); it assigns the next free `acf-<N>` and retries on a race. Never pass `--id` yourself, and do not call `bd create` directly for top-level beads.
+- Child beads (`--parent`) may use `bd create` or `scripts/bd-new`; Beads numbers them `<parent>.<k>`.
+- Known exceptions that still produce random suffixes (`acf-x7q`): beads filed automatically by tools such as roborev's Beads hook, and gate beads created by the factory's own Go code. Rename one with `bd rename <old> <next acf-N>` if it matters.
+

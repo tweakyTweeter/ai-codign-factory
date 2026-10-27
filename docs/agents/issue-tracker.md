@@ -23,7 +23,7 @@ triggered. Write long bodies to a file under `$TMPDIR` and pass
 
 ## When a skill says "publish to the issue tracker"
 
-- Spec: `bd update EPIC --body-file SPEC` (or `bd create TITLE -t epic -l factory-intake --body-file SPEC` when no epic exists).
+- Spec: `bd update EPIC --body-file SPEC` (or `scripts/bd-new TITLE -t epic -l factory-intake --body-file SPEC` when no epic exists; top-level beads always go through `scripts/bd-new` so they get sequential `acf-<N>` IDs, while `--parent` children are numbered `<parent>.<k>` by Beads).
 - Tickets, in dependency order (blockers first):
   `bd create TITLE --parent EPIC -t task -l ready-for-agent --body-file BODY --acceptance "..." --deps blocked-by:ID --silent`
 

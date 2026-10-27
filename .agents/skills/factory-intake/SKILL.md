@@ -83,7 +83,8 @@ Never comment on a decision bead yourself: any comment counts as the answer.
 ## Phases
 
 Create and claim the intake epic first:
-`bd create "<request title>" -t epic -l factory-intake --body-file REQUEST --silent --sandbox`
+`scripts/bd-new "<request title>" -t epic -l factory-intake --body-file REQUEST --silent --sandbox`
+(top-level beads must use `scripts/bd-new` so they get the next `acf-<N>` ID; see `AGENTS.md`)
 then `bd update EPIC --claim --sandbox`.
 
 ### 1. Draft (Producer subagent)
