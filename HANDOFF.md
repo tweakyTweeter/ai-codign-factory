@@ -135,7 +135,7 @@ Known limit: the repository's parent directory must be writable (the `<repo>.fac
 
 | Change | Where |
 |---|---|
-| Neutral subagent roles `factory-producer` and `factory-principal-engineer`, authored as APM local primitives and deployed to `.github/agents/` for Copilot | `.apm/agents/`, `.github/agents/factory-*.agent.md`, `apm.lock.yaml`; linked from `.claude/agents/` and `.opencode/agents/` |
+| Neutral subagent roles `factory-producer` and `factory-principal-engineer`, authored as APM local primitives and deployed to `.github/agents/` for Copilot | `.apm/agents/`, `.github/agents/factory-*.agent.md`, `apm.lock.yaml`; `apm install` also deploys copies to `.claude/agents/` and `.opencode/agents/` |
 | `factory-intake` and `beads` skills visible to Claude Code | links in `.claude/skills/` |
 | Skill rewritten with a per-harness table (launch / continue subagent / load skill) and a fallback for user-only skills (`to-spec`, `to-tickets`, `wayfinder`, `handoff`: read `SKILL.md` directly) | `.agents/skills/factory-intake/SKILL.md` |
 | `.claude/*` and `.opencode/*` ignored except the shared links | `.gitignore` |
@@ -181,7 +181,7 @@ Useful Beads 1.3.1 facts:
 - `bd ready --parent EPIC -l ready-for-agent --unassigned --json --limit 0` returns only the ready children.
 
 How the skills map:
-- `grill-with-docs` (preferred) or `grill-me`, plus `domain-modeling` and `codebase-design`, are used during grilling.
+- Grilling loads `grilling`, `domain-modeling` and `codebase-design` directly (`grill-with-docs` and `grill-me` are user-only wrappers around them).
 - `to-spec` and `to-tickets` produce the spec and the tickets.
 - `prototype` and `handoff` write only to `$TMPDIR`.
 - `wayfinder` charts a `wayfinder:map` epic and then stops.

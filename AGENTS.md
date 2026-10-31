@@ -155,7 +155,7 @@ This repository must work the same from Claude Code, Codex, OpenCode and Copilot
 
 Beads in this repository use the prefix `acf-` with sequential numbers (`acf-37`, children `acf-37.3`).
 
-- Create every **top-level** bead with `scripts/bd-new` (same arguments as `bd create`); it assigns the next free `acf-<N>` and retries on a race. Never pass `--id` yourself, and do not call `bd create` directly for top-level beads.
+- Create every **top-level** bead with `scripts/bd-new` (same arguments as `bd create`); it assigns the next `acf-<N>` from the counter in Beads config key `custom.acf_next_id` (seeded from existing IDs if unset, so random all-digit IDs never move the sequence) and retries on a race. Pass `--sandbox` as usual; the wrapper forwards it to its own `bd` calls. Never pass `--id` yourself, and do not call `bd create` directly for top-level beads.
 - Child beads (`--parent`) may use `bd create` or `scripts/bd-new`; Beads numbers them `<parent>.<k>`.
 - Known exceptions that still produce random suffixes (`acf-x7q`): beads filed automatically by tools such as roborev's Beads hook, and gate beads created by the factory's own Go code. Rename one with `bd rename <old> <next acf-N>` if it matters.
 

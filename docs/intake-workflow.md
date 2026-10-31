@@ -28,8 +28,8 @@ mapping used by the Matt Pocock engineering skills lives in
 request
   → intake epic (Beads, label factory-intake)
   → Producer subagent drafts scope, seams, assumptions
-  → grill the subagent (/grill-with-docs or /grill-me, plus
-    /domain-modeling and /codebase-design)
+  → grill the subagent (grilling, plus domain-modeling and
+    codebase-design)
       ↳ human-only questions → decision beads → Scotty Needs You
   → Principal Engineer subagent review
   → /to-spec → spec stored as the epic description (seams confirmed via Needs You)
@@ -83,8 +83,9 @@ candidate-bound native gate in `docs/human-approval.md`.
 `/grill-me` and `/grill-with-docs` are thin wrappers over `grilling` (plus
 `domain-modeling`), so intake loads those directly. `to-spec`, `to-tickets`,
 `wayfinder` and `handoff` are marked user-only (`disable-model-invocation`);
-when a harness refuses to load them, intake reads their `SKILL.md` from
-`~/.agents/skills/` instead. All of these and `/setup-matt-pocock-skills`
+when a harness refuses to load them, intake reads their `SKILL.md` from the
+first of `.agents/skills/NAME/`, `~/.agents/skills/NAME/` and
+`~/.claude/skills/NAME/` that exists. All of these and `/setup-matt-pocock-skills`
 must be installed separately. If
 `/setup-matt-pocock-skills` is run later, keep the Beads tracker choice
 ("Other") so these files are not replaced with a GitHub or `.scratch`

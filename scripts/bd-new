@@ -4,49 +4,66 @@
 # Usage: scripts/bd-new [bd create arguments...]
 #   scripts/bd-new "Fix the thing" -t task -p 2 --description "..."
 #
-# Beads 1.3.1 only generates random IDs, so this wrapper picks the next free
-# number from a full export and passes it with --id. Child issues created with
-# --parent are passed straight through: Beads numbers them <parent>.<k>.
+# Beads 1.3.1 only generates random IDs, so this wrapper assigns the number
+# itself. The next number lives in the Beads config key custom.acf_next_id, so
+# a random suffix that happens to be all digits (e.g. acf-482 from a tool that
+# calls bd create directly) never moves the sequence. If the key is unset it is
+# seeded from the contiguous run of existing numeric IDs. Child issues created
+# with --parent are passed straight through: Beads numbers them <parent>.<k>.
 # If another agent takes the same number first, it retries with the next one.
+# On success the output is exactly bd create's stdout (ID only with --silent).
 set -euo pipefail
 
-prefix="$(bd config get issue_prefix)"
-prefix="${prefix%-}"
-
+key="custom.acf_next_id"
+sandbox=()
 for arg in "$@"; do
   case "$arg" in
     --id|--id=*) echo "bd-new: do not pass --id; the wrapper assigns it" >&2; exit 2 ;;
     --parent|--parent=*) exec bd create "$@" ;;
+    --sandbox) sandbox=(--sandbox) ;;
   esac
 done
 
-next_number() {
-  bd export --all | PREFIX="$prefix" python3 -c '
+bdq() { bd "${sandbox[@]+"${sandbox[@]}"}" "$@"; }
+
+prefix="$(bdq config get issue_prefix)"
+prefix="${prefix%-}"
+
+# Seed: the end of the contiguous run 1..N of existing <prefix>-<N> IDs,
+# allowing small gaps (deleted beads) but not a jump to a random number.
+seed_number() {
+  bdq export --all | PREFIX="$prefix" python3 -c '
 import json, os, re, sys
 pat = re.compile(r"^" + re.escape(os.environ["PREFIX"]) + r"-(\d+)$")
+nums = sorted({int(m.group(1)) for line in sys.stdin if line.strip()
+               for m in [pat.match(json.loads(line).get("id", ""))] if m})
 top = 0
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    m = pat.match(json.loads(line).get("id", ""))
-    if m:
-        top = max(top, int(m.group(1)))
+for n in nums:
+    if n - top > 25:
+        break
+    top = n
 print(top + 1)
 '
 }
 
-n="$(next_number)"
-for _ in 1 2 3 4 5; do
-  if out="$(bd create --id "${prefix}-${n}" "$@" 2>&1)"; then
+n="$(bdq config get "$key" 2>/dev/null || true)"
+case "$n" in
+  ''|*[!0-9]*) n="$(seed_number)" ;;
+esac
+
+err="$(mktemp "${TMPDIR:-/tmp}/bd-new.XXXXXX")"
+trap 'rm -f "$err"' EXIT
+for _ in $(seq 1 20); do
+  if out="$(bd create --id "${prefix}-${n}" "$@" 2>"$err")"; then
+    bdq config set "$key" "$((n + 1))" >/dev/null 2>&1 || true
     printf '%s\n' "$out"
     exit 0
   fi
-  if ! grep -qiE 'already exists|duplicate|unique' <<<"$out"; then
-    printf '%s\n' "$out" >&2
+  if ! grep -qiE 'already exists|duplicate|unique' "$err"; then
+    cat "$err" >&2
     exit 1
   fi
   n=$((n + 1))
 done
-echo "bd-new: could not claim a free ${prefix}-<N> after 5 attempts" >&2
+echo "bd-new: could not claim a free ${prefix}-<N> after 20 attempts" >&2
 exit 1
