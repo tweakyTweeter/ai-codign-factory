@@ -96,3 +96,8 @@ func (copilotDriver) Final(raw []byte, _ LaunchInputs, _ *PhaseOutcome) (string,
 }
 
 func (copilotDriver) PostRun(string, map[string]string, *PhaseOutcome) error { return nil }
+
+// ReserveSpillDir is a no-op: Copilot has no per-launch spill dir to grant.
+func (copilotDriver) ReserveSpillDir(string) (string, func() error, error) {
+	return "", func() error { return nil }, nil
+}

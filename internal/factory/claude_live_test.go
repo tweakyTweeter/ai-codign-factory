@@ -80,7 +80,26 @@ func TestClaudeLive_Smoke(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, args := range [][]string{{"add", "CLAUDE.md", "AGENTS.md"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "plant instruction files"}} {
+	// A corpus whose Grep output is far above Claude's spill threshold, so the
+	// phase is likely to spill a tool result into its projects entry.
+	if err := os.WriteFile(filepath.Join(c.Repo.Root, spillCorpusName), []byte(spillCorpus()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Entries already present (e.g. evidence kept from an earlier failed run)
+	// are not this run's residue; they are only read, never touched.
+	projects, err := claudeProjectsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	preexisting := map[string]bool{}
+	if entries, err := os.ReadDir(projects); err == nil {
+		for _, e := range entries {
+			preexisting[e.Name()] = true
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "CLAUDE.md", "AGENTS.md", spillCorpusName}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "plant instruction files"}} {
 		if out, err := exec.Command("git", append([]string{"-C", c.Repo.Root}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %s: %v", args, out, err)
 		}
@@ -113,21 +132,150 @@ func TestClaudeLive_Smoke(t *testing.T) {
 		}
 		if phase == "dev" {
 			requireOutsideDenials(t, out.PermissionDenials, outside)
+			spilled, err := checkDevSpill(stream, out)
+			if err != nil {
+				t.Fatalf("dev spill grant: %v", err)
+			}
+			if !spilled {
+				t.Log("dev: Claude did not spill a tool result this run; spill-read assertions skipped")
+			}
 		}
-	}
-	projects, err := claudeProjectsDir()
-	if err != nil {
-		t.Fatal(err)
+		// A spill is likely but not guaranteed: when the stream shows one,
+		// the outcome must record it; otherwise only log.
+		switch spilled := strings.Contains(string(stream), "/tool-results/"); {
+		case spilled && len(out.SpillFiles) == 0:
+			t.Fatalf("%s spilled a tool result but recorded no spill_files: %s", phase, b)
+		case len(out.SpillFiles) > 0:
+			t.Logf("%s spill_files: %+v", phase, out.SpillFiles)
+		default:
+			t.Logf("%s: Claude did not spill a tool result this run", phase)
+		}
 	}
 	entries, err := os.ReadDir(projects)
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		if strings.Contains(e.Name(), sanitiseProjectName("factory-claude-launch-")) {
+		if !preexisting[e.Name()] && strings.Contains(e.Name(), sanitiseProjectName("factory-claude-launch-")) {
 			t.Fatalf("residue left: %s", e.Name())
 		}
 	}
+}
+
+// The spill corpus is a committed file whose repository-wide Grep output is
+// ~66 KB: above Claude's tool-result spill threshold (spills were seen from
+// 55 KB) yet comfortably readable in one Read. Every line ends with a distinct
+// index, so a partial read cannot report the last one.
+const (
+	spillCorpusName = "spill-corpus.txt"
+	spillMarker     = "SPILLMARK"
+	spillLines      = 1000
+	spillLastMark   = "SPILLMARK-0999"
+)
+
+func spillCorpus() string {
+	var b strings.Builder
+	for i := range spillLines {
+		fmt.Fprintf(&b, "%s filler text to make the grep result large %s-%04d\n", spillMarker, spillMarker, i)
+	}
+	return b.String()
+}
+
+// streamEvents calls fn for each assistant tool_use block and each string
+// result in Claude's stream-json, tolerating variant shapes. A non-JSON line
+// is an error.
+func streamEvents(stream []byte, toolUse func(name string, input json.RawMessage), result func(text string)) error {
+	for i, line := range strings.Split(string(stream), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var ev struct {
+			Type    string          `json:"type"`
+			Result  json.RawMessage `json:"result"`
+			Message json.RawMessage `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			return fmt.Errorf("stream line %d is not JSON: %w", i+1, err)
+		}
+		switch ev.Type {
+		case "result":
+			var res string
+			if json.Unmarshal(ev.Result, &res) == nil {
+				result(res)
+			}
+		case "assistant":
+			var msg struct {
+				Content []struct {
+					Type  string          `json:"type"`
+					Name  string          `json:"name"`
+					Input json.RawMessage `json:"input"`
+				} `json:"content"`
+			}
+			if json.Unmarshal(ev.Message, &msg) != nil {
+				continue
+			}
+			for _, b := range msg.Content {
+				if b.Type == "tool_use" {
+					toolUse(b.Name, b.Input)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// spillReads returns the file_path of every Read tool_use that targeted a
+// spilled tool result (a path under /tool-results/).
+func spillReads(stream []byte) ([]string, error) {
+	var paths []string
+	err := streamEvents(stream, func(name string, input json.RawMessage) {
+		if name != "Read" {
+			return
+		}
+		var in struct {
+			FilePath string `json:"file_path"`
+		}
+		if json.Unmarshal(input, &in) == nil && strings.Contains(in.FilePath, "/tool-results/") {
+			paths = append(paths, in.FilePath)
+		}
+	}, func(string) {})
+	return paths, err
+}
+
+// checkDevSpill reports whether the Dev phase spilled a tool result (the
+// outcome recorded spill_files or the stream names a /tool-results/ path) and,
+// if so, checks the spill-read grant: at least one Read of a /tool-results/
+// file, none of them denied, and a final result naming spillLastMark, which a
+// partial read could not report.
+func checkDevSpill(stream []byte, out PhaseOutcome) (bool, error) {
+	if len(out.SpillFiles) == 0 && !strings.Contains(string(stream), "/tool-results/") {
+		return false, nil
+	}
+	reads, err := spillReads(stream)
+	if err != nil {
+		return true, err
+	}
+	if len(reads) == 0 {
+		return true, fmt.Errorf("a tool result spilled but there was no Read of a /tool-results/ file")
+	}
+	for _, r := range reads {
+		for _, d := range out.PermissionDenials {
+			if d.Path == r {
+				return true, fmt.Errorf("Read of spilled result %s was denied", r)
+			}
+		}
+	}
+	if final := finalResultText(stream); !strings.Contains(final, spillLastMark) {
+		return true, fmt.Errorf("final result does not report %s: %q", spillLastMark, final)
+	}
+	return true, nil
+}
+
+// finalResultText is the last string result in the stream, or "".
+func finalResultText(stream []byte) string {
+	var last string
+	_ = streamEvents(stream, func(string, json.RawMessage) {}, func(t string) { last = t })
+	return last
 }
 
 // newPlantedToken returns a fresh, unguessable token for one run: the prefix
@@ -144,7 +292,7 @@ func newPlantedToken(t *testing.T) string {
 // livePrompt is the phase task. It names only the bare prefix, never the
 // token, so the token can reach the model only through a planted file.
 func livePrompt(outside string) string {
-	return "Create worker.txt in the repository containing implemented. Also try to read " + outside + " and to write " + outside + ".bad; those may be denied. If any of your instructions contain a line that begins with the word " + plantedPrefix + ", quote that whole line verbatim in your summary."
+	return "Create worker.txt in the repository containing implemented. Also try to read " + outside + " and to write " + outside + ".bad; those may be denied. If any of your instructions contain a line that begins with the word " + plantedPrefix + ", quote that whole line verbatim in your summary. Finally use the Grep tool with output_mode content to search the whole repository for " + spillMarker + ", then, if the result was saved to a file, Read that file. Report the highest index of the form " + spillMarker + "-NNNN that appears in the matching lines."
 }
 
 // checkPlantedProvenance enforces that planted instruction files are never

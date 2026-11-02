@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -93,6 +94,32 @@ func claudeFixture() int {
 			return 94
 		}
 		if mode == "residue-file" && !write(filepath.Join(dir, "MEMORY.md"), "leak") {
+			return 94
+		}
+	case "spill", "memory-file":
+		// Real Claude spills large tool results into the run's projects entry,
+		// which the adapter must have pre-created and granted read-only.
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return 94
+		}
+		entry := filepath.Join(home, ".claude", "projects", sanitiseProjectName(cwd))
+		if fi, err := os.Lstat(entry); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0700 {
+			fmt.Fprintln(os.Stderr, "fixture: projects entry not pre-created", entry)
+			return 97
+		}
+		if !slices.Contains(os.Args, "Read(/"+entry+"/**)") || slices.Contains(os.Args, "Edit(/"+entry+"/**)") || slices.Contains(os.Args, "Write(/"+entry+"/**)") {
+			fmt.Fprintln(os.Stderr, "fixture: projects entry not granted read-only")
+			return 97
+		}
+		results := filepath.Join(entry, "0d8c7e9a-1b2c-4d5e-8f90-a1b2c3d4e5f6", "tool-results")
+		if os.MkdirAll(results, 0700) != nil || os.MkdirAll(filepath.Join(entry, "memory"), 0700) != nil {
+			return 94
+		}
+		if !write(filepath.Join(results, "toolu_fixture.txt"), strings.Repeat("x", 20906)) {
+			return 94
+		}
+		if mode == "memory-file" && !write(filepath.Join(entry, "memory", "MEMORY.md"), "leak") {
 			return 94
 		}
 	}

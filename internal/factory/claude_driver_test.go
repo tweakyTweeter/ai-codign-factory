@@ -316,3 +316,39 @@ func TestClaudeLaunchSettingsAndProfile(t *testing.T) {
 		t.Fatalf("profile copy: %q %q: %v", path, b, err)
 	}
 }
+
+func TestClaudeTools_SpillRootIsReadOnly(t *testing.T) {
+	dir := resolvedTempDir(t)
+	roots := ToolRoots{Worktree: filepath.Join(dir, "wt"), Inputs: filepath.Join(dir, "in"), Profile: filepath.Join(dir, "pr"), Spill: filepath.Join(dir, "spill")}
+	for _, d := range []string{roots.Worktree, roots.Inputs, roots.Profile, roots.Spill} {
+		if err := os.MkdirAll(d, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dev, err := claudeDriver{}.Tools(claudeTestPolicy("dev", "read", "write"), roots)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spill []string
+	for _, rule := range dev.Allowed {
+		if strings.Contains(rule, roots.Spill) {
+			spill = append(spill, rule)
+		}
+	}
+	want := []string{"Read(/" + roots.Spill + "/**)", "Grep(/" + roots.Spill + "/**)", "Glob(/" + roots.Spill + "/**)"}
+	if !slices.Equal(spill, want) {
+		t.Fatalf("spill rules %q, want exactly %q", spill, want)
+	}
+	roots.Spill = ""
+	qa, err := claudeDriver{}.Tools(claudeTestPolicy("qa", "read"), roots)
+	if err != nil || len(qa.Allowed) != 9 {
+		t.Fatalf("no spill root must add no rule: %q: %v", qa.Allowed, err)
+	}
+	roots.Spill = filepath.Join(dir, "sp ill")
+	if err := os.MkdirAll(roots.Spill, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (claudeDriver{}).Tools(claudeTestPolicy("qa", "read"), roots); err == nil || !strings.Contains(err.Error(), "unsafe") {
+		t.Fatalf("unsafe spill root accepted: %v", err)
+	}
+}

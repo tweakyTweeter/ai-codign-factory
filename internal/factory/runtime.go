@@ -17,7 +17,7 @@ import (
 )
 
 // ToolRoots are the directories a driver may scope tool rules to.
-type ToolRoots struct{ Worktree, Inputs, Profile string }
+type ToolRoots struct{ Worktree, Inputs, Profile, Spill string }
 
 // DriverTools is the runtime tool surface derived from a phase policy.
 type DriverTools struct {
@@ -56,6 +56,13 @@ type PhaseOutcome struct {
 	RateLimited       bool               `json:"rate_limited,omitempty"`
 	PermissionDenials []PermissionDenial `json:"permission_denials,omitempty"`
 	Residue           []string           `json:"residue,omitempty"`
+	SpillFiles        []SpillFile        `json:"spill_files,omitempty"`
+}
+
+// SpillFile is the recorded part of a removed tool-result spill.
+type SpillFile struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
 }
 
 // PermissionDenial is the recorded part of a denied tool call: the tool and
@@ -120,6 +127,7 @@ type Driver interface {
 	Argv(p PhasePolicy, in LaunchInputs) []string
 	Final(raw []byte, in LaunchInputs, out *PhaseOutcome) (string, error)
 	PostRun(launch string, before map[string]string, out *PhaseOutcome) error
+	ReserveSpillDir(launch string) (dir string, release func() error, err error)
 	Notice() string
 }
 
@@ -282,6 +290,19 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 	if policy.Runtime != "copilot" {
 		roots = ToolRoots{Worktree: worktree, Inputs: inputs, Profile: filepath.Join(launch, "profile-snapshot")}
 	}
+	// The runtime's spill dir lives outside the launch dir (Claude: its own
+	// projects entry). Until PostRun audits it, release removes it if empty.
+	spill, release, err := reserveSpill(d, launch, out)
+	if err != nil {
+		return err
+	}
+	audited := false
+	defer func() {
+		if !audited {
+			err = releaseSpill(spill, release, out, err)
+		}
+	}()
+	roots.Spill = spill
 	tools, err := d.Tools(policy, roots)
 	if err != nil {
 		out.FailureReason = "policy"
@@ -345,6 +366,7 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 		integrity = errors.Join(integrity, sErr, fmt.Errorf("%s launch settings changed", d.Label()))
 	}
 	raw := stdout.Bytes()
+	audited = true
 	err = finishRun(d, launch, before, raw, in, out, err, capOut.truncated || diagnostics.truncated, integrity)
 	err = errors.Join(err, writeExclusive(filepath.Join(output, d.Name()+".stderr.log"), stderr.Bytes()))
 	writeErr := writeExclusive(filepath.Join(output, d.Name()+".jsonl"), raw)
@@ -445,4 +467,36 @@ func InspectPhasePolicy(ctx context.Context, phase, role string, argv []string) 
 		}
 	}
 	return pr, nil
+}
+
+// reserveSpill reserves the driver's spill dir (see Driver.ReserveSpillDir).
+// An entry that already exists is stale or foreign: it fails closed, is left
+// alone and is named in out.Residue.
+func reserveSpill(d Driver, launch string, out *PhaseOutcome) (string, func() error, error) {
+	dir, release, err := d.ReserveSpillDir(launch)
+	if err != nil {
+		if out.Runtime != "" {
+			out.FailureReason = "isolation_mismatch"
+			if _, lErr := os.Lstat(dir); dir != "" && lErr == nil {
+				out.Residue = append(out.Residue, dir)
+			}
+		}
+		return "", nil, err
+	}
+	return dir, release, nil
+}
+
+// releaseSpill releases a spill dir that PostRun never audited (the run ended
+// before the model ran). If the dir is no longer empty it is kept as residue
+// and the phase fails with isolation_mismatch, which outranks the early error.
+func releaseSpill(dir string, release func() error, out *PhaseOutcome, err error) error {
+	rErr := release()
+	if rErr == nil {
+		return err
+	}
+	if out.Runtime != "" {
+		out.FailureReason = "isolation_mismatch"
+		out.Residue = append(out.Residue, dir)
+	}
+	return errors.Join(fmt.Errorf("failure_reason=isolation_mismatch: %s left state in its spill dir: %w", out.Runtime, rErr), err)
 }
