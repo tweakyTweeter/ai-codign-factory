@@ -3,6 +3,7 @@ package factory
 import (
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -111,6 +112,7 @@ func TestClaudeAdapter_FailsClosed(t *testing.T) {
 		{"tamper-settings", "producer", "isolation_mismatch", "launch settings changed"},
 		{"launch-litter", "producer", "isolation_mismatch", "changed its private launch dir"},
 		{"residue-file", "producer", "isolation_mismatch", "Claude wrote global state"},
+		{"memory-file", "producer", "isolation_mismatch", "Claude wrote global state"},
 		{"extra-tool", "producer", "isolation_mismatch", "Claude reported tools"},
 		{"usage-limit", "producer", "usage_limit", "Claude result unsuccessful"},
 		// A failed exec has its (here empty) stream classified; see classifyRunFailure.
@@ -140,6 +142,17 @@ func TestClaudeAdapter_FailsClosed(t *testing.T) {
 			if json.Unmarshal(b, &outcome) != nil || outcome.FailureReason != tc.reason {
 				t.Fatalf("outcome: %s", b)
 			}
+			if tc.mode == "memory-file" {
+				// A spill next to any other file keeps the whole entry, spill included.
+				if len(outcome.Residue) != 1 || len(outcome.SpillFiles) != 0 {
+					t.Fatalf("memory-file outcome: %s", b)
+				}
+				for _, rel := range []string{"memory/MEMORY.md", "0d8c7e9a-1b2c-4d5e-8f90-a1b2c3d4e5f6/tool-results/toolu_fixture.txt"} {
+					if _, err := os.Stat(filepath.Join(outcome.Residue[0], rel)); err != nil {
+						t.Fatalf("residue evidence %s removed: %v", rel, err)
+					}
+				}
+			}
 			if tc.mode == "residue-file" {
 				// Residue with content is kept as evidence, never deleted.
 				if len(outcome.Residue) != 1 || !strings.HasPrefix(outcome.Residue[0], projects+string(filepath.Separator)) {
@@ -162,5 +175,63 @@ func TestClaudeAdapter_EmptyResidueIsCleaned(t *testing.T) {
 	}
 	if entries, err := os.ReadDir(projects); err != nil || len(entries) != 0 {
 		t.Fatalf("empty residue not removed (fixture must have created it): %v: %v", entries, err)
+	}
+}
+
+func TestClaudeAdapter_SpillIsRecordedAndCleaned(t *testing.T) {
+	projects := claudeEnvSetup(t)
+	c, req := setupController(t), workflowRequest()
+	for _, role := range []string{"producer", "dev"} {
+		useClaudePhase(t, req, role, "spill")
+	}
+	r, err := c.Run(t.Context(), req)
+	if err != nil || r.State != "awaiting_review" {
+		t.Fatalf("spilling run failed: %+v: %v", r, err)
+	}
+	for _, phase := range []string{"producer", "dev"} {
+		var outcome PhaseOutcome
+		b, _ := os.ReadFile(filepath.Join(r.Dir, "outputs", phase, "adapter-outcome.json"))
+		want := []SpillFile{{Path: "0d8c7e9a-1b2c-4d5e-8f90-a1b2c3d4e5f6/tool-results/toolu_fixture.txt", Size: 20906}}
+		if json.Unmarshal(b, &outcome) != nil || outcome.FailureReason != "" || len(outcome.Residue) != 0 || !slices.Equal(outcome.SpillFiles, want) {
+			t.Fatalf("%s outcome: %s", phase, b)
+		}
+		if strings.Contains(string(b), "xxxx") {
+			t.Fatalf("%s outcome holds spill content: %s", phase, b)
+		}
+	}
+	if entries, err := os.ReadDir(projects); err != nil || len(entries) != 0 {
+		t.Fatalf("spill entry not removed: %v: %v", entries, err)
+	}
+}
+
+// A run that fails after the projects entry is reserved but before the model
+// runs (here `claude --version` fails) must not leave the empty entry behind.
+func TestClaudeAdapter_EarlyFailureReleasesReservedEntry(t *testing.T) {
+	falseBin, err := exec.LookPath("false")
+	if err != nil {
+		t.Skip("no false binary")
+	}
+	projects := claudeEnvSetup(t)
+	c, req := setupController(t), workflowRequest()
+	useClaudePhase(t, req, "producer", "")
+	policy := req.Config.Workflow.Phases[0].Command.Argv[len(req.Config.Workflow.Phases[0].Command.Argv)-1]
+	b, err := os.ReadFile(policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = []byte(strings.Replace(string(b), `"executable":"`+os.Args[0]+`"`, `"executable":"`+falseBin+`"`, 1))
+	if err := os.WriteFile(policy, b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := c.Run(t.Context(), req)
+	if err == nil || r.State == "awaiting_review" {
+		t.Fatalf("failing --version accepted: %+v", r)
+	}
+	log, _ := os.ReadFile(r.Evidence[len(r.Evidence)-1].Log)
+	if !strings.Contains(string(log), "claude --version failed") {
+		t.Fatalf("run did not fail at --version: %s", log)
+	}
+	if entries, err := os.ReadDir(projects); err != nil || len(entries) != 0 {
+		t.Fatalf("reserved entry left behind: %v: %v", entries, err)
 	}
 }

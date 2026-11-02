@@ -17,7 +17,7 @@ import (
 )
 
 // ToolRoots are the directories a driver may scope tool rules to.
-type ToolRoots struct{ Worktree, Inputs, Profile string }
+type ToolRoots struct{ Worktree, Inputs, Profile, Spill string }
 
 // DriverTools is the runtime tool surface derived from a phase policy.
 type DriverTools struct {
@@ -56,6 +56,13 @@ type PhaseOutcome struct {
 	RateLimited       bool               `json:"rate_limited,omitempty"`
 	PermissionDenials []PermissionDenial `json:"permission_denials,omitempty"`
 	Residue           []string           `json:"residue,omitempty"`
+	SpillFiles        []SpillFile        `json:"spill_files,omitempty"`
+}
+
+// SpillFile is the recorded part of a removed tool-result spill.
+type SpillFile struct {
+	Path string `json:"path"`
+	Size int64  `json:"size"`
 }
 
 // PermissionDenial is the recorded part of a denied tool call: the tool and
@@ -120,6 +127,7 @@ type Driver interface {
 	Argv(p PhasePolicy, in LaunchInputs) []string
 	Final(raw []byte, in LaunchInputs, out *PhaseOutcome) (string, error)
 	PostRun(launch string, before map[string]string, out *PhaseOutcome) error
+	ReserveSpillDir(launch string) (dir string, release func() error, err error)
 	Notice() string
 }
 
@@ -282,6 +290,22 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 	if policy.Runtime != "copilot" {
 		roots = ToolRoots{Worktree: worktree, Inputs: inputs, Profile: filepath.Join(launch, "profile-snapshot")}
 	}
+	// The runtime's spill dir lives outside the launch dir (Claude: its own
+	// projects entry). Until PostRun audits it, release removes it if empty.
+	spill, release, err := d.ReserveSpillDir(launch)
+	if err != nil {
+		if out.Runtime != "" {
+			out.FailureReason = "isolation_mismatch"
+		}
+		return err
+	}
+	audited := false
+	defer func() {
+		if !audited {
+			err = errors.Join(err, release())
+		}
+	}()
+	roots.Spill = spill
 	tools, err := d.Tools(policy, roots)
 	if err != nil {
 		out.FailureReason = "policy"
@@ -345,6 +369,7 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 		integrity = errors.Join(integrity, sErr, fmt.Errorf("%s launch settings changed", d.Label()))
 	}
 	raw := stdout.Bytes()
+	audited = true
 	err = finishRun(d, launch, before, raw, in, out, err, capOut.truncated || diagnostics.truncated, integrity)
 	err = errors.Join(err, writeExclusive(filepath.Join(output, d.Name()+".stderr.log"), stderr.Bytes()))
 	writeErr := writeExclusive(filepath.Join(output, d.Name()+".jsonl"), raw)

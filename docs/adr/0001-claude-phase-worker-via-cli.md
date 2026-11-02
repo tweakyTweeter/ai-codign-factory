@@ -26,7 +26,8 @@ There were three ways to drive Claude:
 3. Isolation comes from layered controls, and the factory **verifies** them rather than trusting the flags:
    - The launch dir is a private temporary directory.
    - Flags: `--setting-sources ""`, `disableAllHooks`, `--strict-mcp-config`, `--disable-slash-commands` and `dontAsk`.
-   - Every read and write allow rule is path-scoped to the worktree, the private inputs and the profile snapshot.
+   - Every read and write allow rule is path-scoped to the worktree, the private inputs and the profile snapshot;
+     the run's own projects entry (tool-result spills) is additionally readable, never writable.
    - The child's environment is a strict allowlist.
    - The phase fails closed unless Claude's own `system/init` event confirms the expected tools, MCP servers,
      skills, plugins, permission mode and cwd.
@@ -50,6 +51,11 @@ There were three ways to drive Claude:
 
 - A new Claude built-in plugin, or a change to the init-event shape, makes phases fail closed until the
   allowlist or parser is updated on purpose.
+- Claude spills large tool results to `<projects>/<entry>/<session>/tool-results/` even without session
+  persistence, and a private `CLAUDE_CONFIG_DIR` would lose the subscription login. So the adapter pre-creates the
+  run's own projects entry, grants the model read-only access to it, and after the run removes only those spill
+  files (recording name and size, never content) and empty directories. Any other write there still fails closed
+  and is kept (`acf-62`).
 - Usage-limit failures are classified but never retried by the adapter.
 - `Read` stays limited to the phase's paths, which is stronger than Copilot's `view`. Copilot's own environment
   hardening is tracked separately (`acf-35`).

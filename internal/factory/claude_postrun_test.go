@@ -1,9 +1,12 @@
 package factory
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -320,5 +323,213 @@ func TestClaudePostRun_FailsClosedOnLongLaunchPath(t *testing.T) {
 	err = (claudeDriver{}).PostRun(long, before, out)
 	if err == nil || out.FailureReason != "isolation_mismatch" || !strings.Contains(err.Error(), "too long") {
 		t.Fatalf("long launch path accepted: %+v: %v", out, err)
+	}
+}
+
+const testSession = "95075eb9-17eb-4d68-99cf-5049e6204250"
+
+func mustWrite(t *testing.T, path, content string) {
+	t.Helper()
+	mustMkdir(t, filepath.Dir(path))
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClaudePostRun_CleansToolResultSpills(t *testing.T) {
+	launch, projects, before := postRunSetup(t)
+	entry := filepath.Join(projects, "-private-var-x-factory-claude-launch-123456")
+	mustMkdir(t, filepath.Join(entry, "memory"))
+	mustWrite(t, filepath.Join(entry, testSession, "tool-results", "toolu_b.txt"), "bbbbbbb")
+	mustWrite(t, filepath.Join(entry, testSession, "tool-results", "toolu_a.txt"), "aaa")
+	other := filepath.Join(projects, "-Users-me-project", testSession, "tool-results", "keep.txt")
+	mustWrite(t, other, "other")
+	out := &PhaseOutcome{}
+	if err := (claudeDriver{}).PostRun(launch, before, out); err != nil {
+		t.Fatalf("spill run failed: %v", err)
+	}
+	if _, err := os.Lstat(entry); !os.IsNotExist(err) {
+		t.Fatalf("spill entry not removed: %v", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatal("unrelated project entry touched")
+	}
+	want := []SpillFile{{Path: filepath.Join(testSession, "tool-results", "toolu_a.txt"), Size: 3}, {Path: filepath.Join(testSession, "tool-results", "toolu_b.txt"), Size: 7}}
+	if out.FailureReason != "" || len(out.Residue) != 0 || !slices.Equal(out.SpillFiles, want) {
+		t.Fatalf("spill outcome: %+v", out)
+	}
+}
+
+func TestClaudePostRun_SpillWithAnythingElseFailsClosed(t *testing.T) {
+	spill := filepath.Join(testSession, "tool-results", "toolu_a.txt")
+	for name, plant := range map[string]func(t *testing.T, entry string){
+		"memory file":         func(t *testing.T, e string) { mustWrite(t, filepath.Join(e, "memory", "MEMORY.md"), "leak") },
+		"file in session dir": func(t *testing.T, e string) { mustWrite(t, filepath.Join(e, testSession, "x.jsonl"), "x") },
+		"file at entry root":  func(t *testing.T, e string) { mustWrite(t, filepath.Join(e, "x.txt"), "x") },
+		"non-uuid session": func(t *testing.T, e string) {
+			mustWrite(t, filepath.Join(e, "not-a-session", "tool-results", "x.txt"), "x")
+		},
+		"uppercase tool-results": func(t *testing.T, e string) {
+			// A separate session: macOS folds case, so under testSession this would land in tool-results.
+			mustWrite(t, filepath.Join(e, "0d8c7e9a-1b2c-4d5e-8f90-a1b2c3d4e5f6", "Tool-Results", "x.txt"), "x")
+		},
+		"nested in tool-results": func(t *testing.T, e string) {
+			mustWrite(t, filepath.Join(e, testSession, "tool-results", "sub", "x.txt"), "x")
+		},
+		"symlink in tool-results": func(t *testing.T, e string) {
+			target := filepath.Join(t.TempDir(), "target.txt")
+			mustWrite(t, target, "secret")
+			if err := os.Symlink(target, filepath.Join(e, testSession, "tool-results", "link.txt")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"fifo in tool-results": func(t *testing.T, e string) {
+			if err := syscall.Mkfifo(filepath.Join(e, testSession, "tool-results", "fifo"), 0600); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			launch, projects, before := postRunSetup(t)
+			entry := filepath.Join(projects, "-x-factory-claude-launch-123456")
+			mustWrite(t, filepath.Join(entry, spill), "spilled")
+			plant(t, entry)
+			want, err := treeManifest(entry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out := &PhaseOutcome{}
+			err = (claudeDriver{}).PostRun(launch, before, out)
+			if err == nil || out.FailureReason != "isolation_mismatch" || !slices.Equal(out.Residue, []string{entry}) || !strings.Contains(err.Error(), "Claude wrote global state") {
+				t.Fatalf("%s accepted: %+v: %v", name, out, err)
+			}
+			if len(out.SpillFiles) != 0 {
+				t.Fatalf("spill recorded as cleaned although kept: %+v", out.SpillFiles)
+			}
+			got, err := treeManifest(entry)
+			if err != nil || !maps.Equal(got, want) {
+				t.Fatalf("evidence changed: %v\nwant %v\ngot  %v", err, want, got)
+			}
+		})
+	}
+}
+
+func TestClaudePostRun_SymlinkedToolResultsDirFailsClosed(t *testing.T) {
+	launch, projects, before := postRunSetup(t)
+	entry := filepath.Join(projects, "-x-factory-claude-launch-123456")
+	target := filepath.Join(t.TempDir(), "elsewhere")
+	mustWrite(t, filepath.Join(target, "victim.txt"), "keep me")
+	mustMkdir(t, filepath.Join(entry, testSession))
+	if err := os.Symlink(target, filepath.Join(entry, testSession, "tool-results")); err != nil {
+		t.Fatal(err)
+	}
+	out := &PhaseOutcome{}
+	if err := (claudeDriver{}).PostRun(launch, before, out); err == nil || len(out.Residue) != 1 {
+		t.Fatalf("symlinked tool-results accepted: %+v: %v", out, err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "victim.txt")); err != nil {
+		t.Fatal("symlink target followed and deleted")
+	}
+}
+
+func TestIsSessionID(t *testing.T) {
+	for s, want := range map[string]bool{
+		testSession:                             true,
+		"95075EB9-17EB-4D68-99CF-5049E6204250":  true,
+		"memory":                                false,
+		"95075eb9-17eb-4d68-99cf-5049e620425":   false,
+		"95075eb9-17eb-4d68-99cf-5049e62042500": false,
+		"95075eb9x17eb-4d68-99cf-5049e6204250":  false,
+		"g5075eb9-17eb-4d68-99cf-5049e6204250":  false,
+		"":                                      false,
+	} {
+		if isSessionID(s) != want {
+			t.Errorf("isSessionID(%q) = %v", s, !want)
+		}
+	}
+}
+
+func TestClaudeReserveSpillDir(t *testing.T) {
+	_, projects := isolatedHome(t)
+	launch := filepath.Join(resolvedTempDir(t), "factory-claude-launch-42")
+	mustMkdir(t, launch)
+	dir, release, err := (claudeDriver{}).ReserveSpillDir(launch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != filepath.Join(projects, sanitiseProjectName(launch)) {
+		t.Fatalf("reserved %q", dir)
+	}
+	fi, err := os.Lstat(dir)
+	if err != nil || !fi.IsDir() || fi.Mode().Perm() != 0700 {
+		t.Fatalf("reserved entry: %v: %v", fi, err)
+	}
+	if err := release(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Fatal("release did not remove the empty entry")
+	}
+	if err := release(); err != nil {
+		t.Fatalf("release of an already removed entry: %v", err)
+	}
+}
+
+func TestClaudeReserveSpillDir_ReleaseKeepsContent(t *testing.T) {
+	launch := filepath.Join(resolvedTempDir(t), "factory-claude-launch-42")
+	mustMkdir(t, launch)
+	_, projects := isolatedHome(t)
+	dir, release, err := (claudeDriver{}).ReserveSpillDir(launch)
+	if err != nil || !strings.HasPrefix(dir, projects+string(filepath.Separator)) {
+		t.Fatalf("reserved %q outside %q: %v", dir, projects, err)
+	}
+	mustWrite(t, filepath.Join(dir, "memory", "MEMORY.md"), "x")
+	if err := release(); err == nil {
+		t.Fatal("release of a non-empty entry succeeded")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "memory", "MEMORY.md")); err != nil {
+		t.Fatal("release removed content")
+	}
+}
+
+func TestClaudeReserveSpillDir_FailsClosedOnExistingEntry(t *testing.T) {
+	_, projects := isolatedHome(t)
+	launch := filepath.Join(resolvedTempDir(t), "factory-claude-launch-42")
+	mustMkdir(t, launch)
+	stale := filepath.Join(projects, sanitiseProjectName(launch))
+	mustWrite(t, filepath.Join(stale, "memory", "MEMORY.md"), "stale")
+	if _, _, err := (claudeDriver{}).ReserveSpillDir(launch); err == nil {
+		t.Fatal("existing entry reused")
+	}
+	if _, err := os.Stat(filepath.Join(stale, "memory", "MEMORY.md")); err != nil {
+		t.Fatal("stale entry touched")
+	}
+	link := filepath.Join(resolvedTempDir(t), "factory-claude-launch-43")
+	mustMkdir(t, link)
+	if err := os.Symlink(t.TempDir(), filepath.Join(projects, sanitiseProjectName(link))); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := (claudeDriver{}).ReserveSpillDir(link); err == nil {
+		t.Fatal("symlinked entry reused")
+	}
+}
+
+func TestClaudeReserveSpillDir_FailsClosedOnLongLaunchPath(t *testing.T) {
+	isolatedHome(t)
+	long := filepath.Join(resolvedTempDir(t), strings.Repeat("a", maxSanitisedProjectName), "factory-claude-launch-1")
+	mustMkdir(t, long)
+	if _, _, err := (claudeDriver{}).ReserveSpillDir(long); err == nil || !strings.Contains(err.Error(), "too long") {
+		t.Fatalf("long launch path reserved: %v", err)
+	}
+}
+
+func TestCopilotReserveSpillDir_IsNoop(t *testing.T) {
+	_, projects := isolatedHome(t)
+	dir, release, err := (copilotDriver{}).ReserveSpillDir(t.TempDir())
+	if err != nil || dir != "" || release() != nil {
+		t.Fatalf("copilot reserved %q: %v", dir, err)
+	}
+	if _, err := os.Lstat(projects); !os.IsNotExist(err) {
+		t.Fatal("copilot touched the Claude projects dir")
 	}
 }

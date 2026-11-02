@@ -19,7 +19,7 @@ type claudeDriver struct{}
 
 const claudeLaunchSettings = "{\"disableAllHooks\":true}\n"
 
-const claudeNotice = "private launch dir outside any checkout; no user/project/local settings sources (no user hooks, plugins, permissions or global CLAUDE.md); disableAllHooks; no MCP; no skills; exact tool list with dontAsk; reads limited to the worktree, private inputs and profile; Dev writes limited to the worktree; env is an exact allowlist; built-in plugins (agents-md, telemetry, plugin-authoring) still load; auto-memory points at an empty per-launch-dir folder that is removed after the run; isolation verified from the init event; not a sandbox"
+const claudeNotice = "private launch dir outside any checkout; no user/project/local settings sources (no user hooks, plugins, permissions or global CLAUDE.md); disableAllHooks; no MCP; no skills; exact tool list with dontAsk; reads limited to the worktree, private inputs and profile; Dev writes limited to the worktree; env is an exact allowlist; built-in plugins (agents-md, telemetry, plugin-authoring) still load; the run's own projects entry is pre-created and readable (never writable) so the model can open spilled tool results; after the run its spills are recorded by name and size and removed with its empty folders, and anything else there fails closed and is kept; isolation verified from the init event; not a sandbox"
 
 var claudeEnvAllow = map[string]bool{"PATH": true, "HOME": true, "USER": true, "LOGNAME": true, "SHELL": true, "TMPDIR": true, "LANG": true, "TERM": true, "CLAUDE_CONFIG_DIR": true}
 
@@ -120,6 +120,19 @@ func (claudeDriver) Tools(p PhasePolicy, roots ToolRoots) (DriverTools, error) {
 	t := DriverTools{Available: []string{"Read", "Grep", "Glob"}}
 	for _, root := range []struct{ label, path string }{{"worktree", roots.Worktree}, {"inputs", roots.Inputs}, {"profile", roots.Profile}} {
 		forms, err := safeScopeRoots(root.label, root.path)
+		if err != nil {
+			return DriverTools{}, err
+		}
+		for _, form := range forms {
+			for _, tool := range []string{"Read", "Grep", "Glob"} {
+				t.Allowed = append(t.Allowed, scopedRule(tool, form))
+			}
+		}
+	}
+	// The run's own projects entry, where Claude spills large tool results,
+	// is readable so the model can open them; it is never writable.
+	if roots.Spill != "" {
+		forms, err := safeScopeRoots("spill", roots.Spill)
 		if err != nil {
 			return DriverTools{}, err
 		}

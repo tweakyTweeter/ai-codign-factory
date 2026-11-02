@@ -252,8 +252,11 @@ private launch dir outside any checkout; no user/project/local settings sources
 MCP; no skills; exact tool list with dontAsk; reads limited to the worktree,
 private inputs and profile; Dev writes limited to the worktree; env is an exact
 allowlist; built-in plugins (agents-md, telemetry, plugin-authoring) still
-load; auto-memory points at an empty per-launch-dir folder that is removed after
-the run; isolation verified from the init event; not a sandbox.
+load; the run's own projects entry is pre-created and readable (never
+writable) so the model can open spilled tool results; after the run its spills
+are recorded by name and size and removed with its empty folders, and anything
+else there fails closed and is kept; isolation verified from the init event;
+not a sandbox.
 
 Tools are `Read`, `Grep` and `Glob`, plus `Edit` and `Write` for Dev with the
 `write` grant. `Bash`, `WebFetch`, `WebSearch`, `Agent`, `NotebookEdit` and MCP
@@ -283,19 +286,35 @@ only the built-in plugins `cc-plugin-agents-md@builtin`,
 `apiKeySource` exactly `"none"`. The result event must be a successful
 non-empty result; data after it is invalid.
 
+Claude writes large tool outputs (for example a long `Grep` result) to
+`<projects>/<entry>/<session-uuid>/tool-results/<id>.txt`, even with
+`--no-session-persistence`, and gives the model only a short preview. So before
+launch the adapter creates the run's own entry,
+`<projects>/<sanitised launch path>` (`<projects>` is `~/.claude/projects`, or
+`$CLAUDE_CONFIG_DIR/projects`), with mode 0700, and grants `Read`, `Grep` and
+`Glob` (never `Edit` or `Write`) on it. If that entry already exists (stale or
+foreign) the phase fails closed with `isolation_mismatch` and the entry is left
+alone. If the run ends before the audit, the entry is removed only while it
+holds nothing but empty directories.
+
 Post-run audit (`PostRun`): the launch dir must be unchanged against its
-pre-run manifest, and Claude's per-launch-dir state under
-`~/.claude/projects` (or `$CLAUDE_CONFIG_DIR/projects`) is checked. Entries
-are matched by the sanitised launch base name, either exactly or as the
-`-<launch-base>` suffix. An entry holding only empty directories is removed
-one empty directory at a time with `rmdir` (never `RemoveAll`); any file or symlink fails the phase and the
-entry is kept and listed as residue. A launch path whose sanitised name is
-over 200 characters fails closed because Claude may shorten such names.
+pre-run manifest, and Claude's per-launch-dir state under the projects dir is
+checked. Entries are matched by the sanitised launch base name, either exactly
+or as the `-<launch-base>` suffix. An entry may hold only directories and
+regular files at exactly `<session-uuid>/tool-results/<name>`. Such an entry is
+removed: each spill file's path relative to the entry and its size (never its
+content) is recorded in `spill_files`, the file is removed through an
+`os.Root` on the entry (so a swapped-in symlink cannot redirect it), and then
+each empty directory is removed with `rmdir` (never `RemoveAll`). Any other
+file, a symlink or a special file anywhere fails the phase, nothing is removed,
+and the entry is kept and listed as residue. A launch path whose sanitised name
+is over 200 characters fails closed because Claude may shorten such names.
 
 Post-run facts go to `adapter-outcome.json`, written only by drivers that
 record outcomes (Claude), because `adapter.json` is sealed before the run:
 `runtime`, `failure_reason`, `model`, `claude_code_version`, `api_key_source`,
-`rate_limited`, `permission_denials` and `residue` (empty fields omitted).
+`rate_limited`, `permission_denials`, `residue` and `spill_files`
+(`{"path", "size"}` per removed spill; empty fields omitted).
 Each permission denial records the `tool` and target `path` only, never file
 contents or patterns. `failure_reason` is one of `usage_limit`, `timeout`,
 `isolation_mismatch`, `stream_invalid`, `contract`, `policy`. The first reason
@@ -313,8 +332,8 @@ retries. See `docs/adr/0001-claude-phase-worker-via-cli.md`.
 `FACTORY_LIVE_CLAUDE=1 go test ./internal/factory -run ClaudeLive -count=1 -v`
 is an opt-in smoke test against the real CLI. It uses subscription quota
 (haiku) and the real HOME. The test itself only reads `~/.claude/projects` to
-check that no residue is left; the adapter's PostRun may `rmdir` empty launch
-entries there. It is skipped by default.
+check that no residue is left; the adapter pre-creates its own launch entry
+there and its PostRun removes it (spill files and empty directories only). It is skipped by default.
 
 `factory roborev-import --report PATH --fingerprint REVIEWED_HASH` is an
 alternative review phase adapter. It accepts canonical roborev v0.71.0 schema
