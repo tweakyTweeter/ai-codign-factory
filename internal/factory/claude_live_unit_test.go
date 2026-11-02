@@ -72,3 +72,49 @@ func TestLivePromptOmitsToken(t *testing.T) {
 		t.Fatalf("prompt does not ask about planted lines: %q", p)
 	}
 }
+
+func TestSpillCorpusSize(t *testing.T) {
+	c := spillCorpus()
+	if n := len(c); n < 60_000 || n > 80_000 {
+		t.Fatalf("corpus is %d bytes, want 60-80 KB", n)
+	}
+	lines := strings.Split(strings.TrimSuffix(c, "\n"), "\n")
+	if got := lines[len(lines)-1]; !strings.HasSuffix(got, spillLastMark) {
+		t.Fatalf("last line %q does not end with %s", got, spillLastMark)
+	}
+	if strings.Contains(livePrompt("/x"), spillLastMark) {
+		t.Fatal("prompt leaks the expected last mark")
+	}
+}
+
+func TestSpillReads(t *testing.T) {
+	spill := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/h/.claude/projects/e/u/tool-results/toolu_1.txt"}}]}}`
+	other := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/w/a.go"}}]}}`
+	grep := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Grep","input":{"pattern":"/tool-results/"}}]}}`
+	for _, tc := range []struct {
+		name    string
+		lines   []string
+		want    int
+		wantErr bool
+	}{
+		{"spill read", []string{other, spill}, 1, false},
+		{"no spill read", []string{other, grep}, 0, false},
+		{"variant shapes", []string{`{"type":"user","message":"s"}`, `{"type":"assistant","message":null}`, spill}, 1, false},
+		{"malformed", []string{"nope"}, 0, true},
+	} {
+		got, err := spillReads([]byte(strings.Join(tc.lines, "\n") + "\n"))
+		if (err != nil) != tc.wantErr || len(got) != tc.want {
+			t.Errorf("%s: got %v err=%v", tc.name, got, err)
+		}
+	}
+}
+
+func TestFinalResultText(t *testing.T) {
+	stream := []byte(`{"type":"result","result":"first"}` + "\n" + `{"type":"assistant","message":"x"}` + "\n" + `{"type":"result","result":"highest SPILLMARK-0999"}` + "\n" + `{"type":"result","result":{"k":1}}` + "\n")
+	if got := finalResultText(stream); got != "highest SPILLMARK-0999" {
+		t.Fatalf("got %q", got)
+	}
+	if got := finalResultText([]byte("garbage\n")); got != "" {
+		t.Fatalf("got %q", got)
+	}
+}

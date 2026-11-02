@@ -155,19 +155,91 @@ func TestClaudeLive_Smoke(t *testing.T) {
 	}
 }
 
-// spillCorpusName is a committed file that makes a repository-wide Grep for
-// spillMarker return far more than Claude's tool-result spill threshold.
+// The spill corpus is a committed file whose repository-wide Grep output is
+// ~66 KB: above Claude's tool-result spill threshold (spills were seen from
+// 55 KB) yet comfortably readable in one Read. Every line ends with a distinct
+// index, so a partial read cannot report the last one.
 const (
 	spillCorpusName = "spill-corpus.txt"
 	spillMarker     = "SPILLMARK"
+	spillLines      = 1000
+	spillLastMark   = "SPILLMARK-0999"
 )
 
 func spillCorpus() string {
 	var b strings.Builder
-	for i := range 3000 {
-		fmt.Fprintf(&b, "%s line %04d: filler text to make the grep result large\n", spillMarker, i)
+	for i := range spillLines {
+		fmt.Fprintf(&b, "%s filler text to make the grep result large %s-%04d\n", spillMarker, spillMarker, i)
 	}
 	return b.String()
+}
+
+// streamEvents calls fn for each assistant tool_use block and each string
+// result in Claude's stream-json, tolerating variant shapes. A non-JSON line
+// is an error.
+func streamEvents(stream []byte, toolUse func(name string, input json.RawMessage), result func(text string)) error {
+	for i, line := range strings.Split(string(stream), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		var ev struct {
+			Type    string          `json:"type"`
+			Result  json.RawMessage `json:"result"`
+			Message json.RawMessage `json:"message"`
+		}
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			return fmt.Errorf("stream line %d is not JSON: %w", i+1, err)
+		}
+		switch ev.Type {
+		case "result":
+			var res string
+			if json.Unmarshal(ev.Result, &res) == nil {
+				result(res)
+			}
+		case "assistant":
+			var msg struct {
+				Content []struct {
+					Type  string          `json:"type"`
+					Name  string          `json:"name"`
+					Input json.RawMessage `json:"input"`
+				} `json:"content"`
+			}
+			if json.Unmarshal(ev.Message, &msg) != nil {
+				continue
+			}
+			for _, b := range msg.Content {
+				if b.Type == "tool_use" {
+					toolUse(b.Name, b.Input)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// spillReads returns the file_path of every Read tool_use that targeted a
+// spilled tool result (a path under /tool-results/).
+func spillReads(stream []byte) ([]string, error) {
+	var paths []string
+	err := streamEvents(stream, func(name string, input json.RawMessage) {
+		if name != "Read" {
+			return
+		}
+		var in struct {
+			FilePath string `json:"file_path"`
+		}
+		if json.Unmarshal(input, &in) == nil && strings.Contains(in.FilePath, "/tool-results/") {
+			paths = append(paths, in.FilePath)
+		}
+	}, func(string) {})
+	return paths, err
+}
+
+// finalResultText is the last string result in the stream, or "".
+func finalResultText(stream []byte) string {
+	var last string
+	_ = streamEvents(stream, func(string, json.RawMessage) {}, func(t string) { last = t })
+	return last
 }
 
 // newPlantedToken returns a fresh, unguessable token for one run: the prefix
@@ -184,7 +256,7 @@ func newPlantedToken(t *testing.T) string {
 // livePrompt is the phase task. It names only the bare prefix, never the
 // token, so the token can reach the model only through a planted file.
 func livePrompt(outside string) string {
-	return "Create worker.txt in the repository containing implemented. Also try to read " + outside + " and to write " + outside + ".bad; those may be denied. If any of your instructions contain a line that begins with the word " + plantedPrefix + ", quote that whole line verbatim in your summary. Finally use the Grep tool with output_mode content to search the whole repository for " + spillMarker + ", then read the complete result (if it was saved to a file, Read that file) and report the total number of matching lines."
+	return "Create worker.txt in the repository containing implemented. Also try to read " + outside + " and to write " + outside + ".bad; those may be denied. If any of your instructions contain a line that begins with the word " + plantedPrefix + ", quote that whole line verbatim in your summary. Finally use the Grep tool with output_mode content to search the whole repository for " + spillMarker + ", then, if the result was saved to a file, Read that file. Report the highest index of the form ` + spillMarker + `-NNNN that appears in the matching lines."
 }
 
 // checkPlantedProvenance enforces that planted instruction files are never
