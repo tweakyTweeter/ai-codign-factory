@@ -132,6 +132,13 @@ func TestClaudeLive_Smoke(t *testing.T) {
 		}
 		if phase == "dev" {
 			requireOutsideDenials(t, out.PermissionDenials, outside)
+			spilled, err := checkDevSpill(stream, out)
+			if err != nil {
+				t.Fatalf("dev spill grant: %v", err)
+			}
+			if !spilled {
+				t.Log("dev: Claude did not spill a tool result this run; spill-read assertions skipped")
+			}
 		}
 		// A spill is likely but not guaranteed: when the stream shows one,
 		// the outcome must record it; otherwise only log.
@@ -235,6 +242,35 @@ func spillReads(stream []byte) ([]string, error) {
 	return paths, err
 }
 
+// checkDevSpill reports whether the Dev phase spilled a tool result (the
+// outcome recorded spill_files or the stream names a /tool-results/ path) and,
+// if so, checks the spill-read grant: at least one Read of a /tool-results/
+// file, none of them denied, and a final result naming spillLastMark, which a
+// partial read could not report.
+func checkDevSpill(stream []byte, out PhaseOutcome) (bool, error) {
+	if len(out.SpillFiles) == 0 && !strings.Contains(string(stream), "/tool-results/") {
+		return false, nil
+	}
+	reads, err := spillReads(stream)
+	if err != nil {
+		return true, err
+	}
+	if len(reads) == 0 {
+		return true, fmt.Errorf("a tool result spilled but there was no Read of a /tool-results/ file")
+	}
+	for _, r := range reads {
+		for _, d := range out.PermissionDenials {
+			if d.Path == r {
+				return true, fmt.Errorf("Read of spilled result %s was denied", r)
+			}
+		}
+	}
+	if final := finalResultText(stream); !strings.Contains(final, spillLastMark) {
+		return true, fmt.Errorf("final result does not report %s: %q", spillLastMark, final)
+	}
+	return true, nil
+}
+
 // finalResultText is the last string result in the stream, or "".
 func finalResultText(stream []byte) string {
 	var last string
@@ -256,7 +292,7 @@ func newPlantedToken(t *testing.T) string {
 // livePrompt is the phase task. It names only the bare prefix, never the
 // token, so the token can reach the model only through a planted file.
 func livePrompt(outside string) string {
-	return "Create worker.txt in the repository containing implemented. Also try to read " + outside + " and to write " + outside + ".bad; those may be denied. If any of your instructions contain a line that begins with the word " + plantedPrefix + ", quote that whole line verbatim in your summary. Finally use the Grep tool with output_mode content to search the whole repository for " + spillMarker + ", then, if the result was saved to a file, Read that file. Report the highest index of the form ` + spillMarker + `-NNNN that appears in the matching lines."
+	return "Create worker.txt in the repository containing implemented. Also try to read " + outside + " and to write " + outside + ".bad; those may be denied. If any of your instructions contain a line that begins with the word " + plantedPrefix + ", quote that whole line verbatim in your summary. Finally use the Grep tool with output_mode content to search the whole repository for " + spillMarker + ", then, if the result was saved to a file, Read that file. Report the highest index of the form " + spillMarker + "-NNNN that appears in the matching lines."
 }
 
 // checkPlantedProvenance enforces that planted instruction files are never

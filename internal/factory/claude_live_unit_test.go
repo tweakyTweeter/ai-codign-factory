@@ -118,3 +118,51 @@ func TestFinalResultText(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestLivePromptSpillMarkerForm(t *testing.T) {
+	p := livePrompt("/x")
+	if !strings.Contains(p, "SPILLMARK-NNNN") {
+		t.Fatalf("prompt does not name the SPILLMARK-NNNN form: %q", p)
+	}
+	if strings.Contains(p, "` + ") || strings.Contains(p, " + `") {
+		t.Fatalf("prompt contains a Go concatenation fragment: %q", p)
+	}
+	if strings.Contains(p, spillLastMark) {
+		t.Fatalf("prompt leaks the answer %s: %q", spillLastMark, p)
+	}
+}
+
+func TestCheckDevSpill(t *testing.T) {
+	const path = "/h/.claude/projects/e/u/tool-results/toolu_1.txt"
+	saved := `{"type":"user","message":{"content":[{"type":"tool_result","content":"Output too large, saved to ` + path + `"}]}}`
+	read := `{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"` + path + `"}}]}}`
+	full := `{"type":"result","result":"highest is ` + spillLastMark + `"}`
+	partial := `{"type":"result","result":"highest is SPILLMARK-0400"}`
+	recorded := PhaseOutcome{SpillFiles: []SpillFile{{Path: path, Size: 1}}}
+	join := func(l ...string) []byte { return []byte(strings.Join(l, "\n") + "\n") }
+	for _, tc := range []struct {
+		name        string
+		stream      []byte
+		out         PhaseOutcome
+		wantSpilled bool
+		wantErr     string
+	}{
+		{"no spill", join(full), PhaseOutcome{}, false, ""},
+		{"spill read and reported", join(saved, read, full), recorded, true, ""},
+		{"spill only in outcome", join(read, full), recorded, true, ""},
+		{"spill without read", join(saved, full), recorded, true, "no Read"},
+		{"spill read denied", join(saved, read, full), PhaseOutcome{SpillFiles: []SpillFile{{Path: path, Size: 1}}, PermissionDenials: []PermissionDenial{{Tool: "Read", Path: path}}}, true, "denied"},
+		{"partial read", join(saved, read, partial), recorded, true, spillLastMark},
+		{"bad stream", join(saved, "garbage"), recorded, true, "not JSON"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spilled, err := checkDevSpill(tc.stream, tc.out)
+			if spilled != tc.wantSpilled {
+				t.Fatalf("spilled = %v, want %v", spilled, tc.wantSpilled)
+			}
+			if tc.wantErr == "" && err != nil || tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)) {
+				t.Fatalf("err = %v, want containing %q", err, tc.wantErr)
+			}
+		})
+	}
+}
