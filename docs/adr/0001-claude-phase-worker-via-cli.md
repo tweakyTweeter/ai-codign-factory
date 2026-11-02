@@ -54,8 +54,11 @@ There were three ways to drive Claude:
 - Claude spills large tool results to `<projects>/<entry>/<session>/tool-results/` even without session
   persistence, and a private `CLAUDE_CONFIG_DIR` would lose the subscription login. So the adapter pre-creates the
   run's own projects entry, grants the model read-only access to it, and after the run removes only those spill
-  files (recording name and size, never content) and empty directories. Any other write there still fails closed
-  and is kept (`acf-62`).
+  files (recording name and size, never content) and empty directories, and only in the exact entry it reserved.
+  Any other write there, or a spill in any other entry, still fails closed and is kept (`acf-62`). Because the
+  projects entry is a rule root, a `HOME` or `CLAUDE_CONFIG_DIR` path containing whitespace, glob metacharacters,
+  a backslash or other characters the rule-root validation refuses makes every Claude phase fail with
+  `failure_reason=policy`.
 - Usage-limit failures are classified but never retried by the adapter.
 - `Read` stays limited to the phase's paths, which is stronger than Copilot's `view`. Copilot's own environment
   hardening is tracked separately (`acf-35`).

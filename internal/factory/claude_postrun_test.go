@@ -1,6 +1,7 @@
 package factory
 
 import (
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -338,7 +339,7 @@ func mustWrite(t *testing.T, path, content string) {
 
 func TestClaudePostRun_CleansToolResultSpills(t *testing.T) {
 	launch, projects, before := postRunSetup(t)
-	entry := filepath.Join(projects, "-private-var-x-factory-claude-launch-123456")
+	entry := filepath.Join(projects, sanitiseProjectName(launch))
 	mustMkdir(t, filepath.Join(entry, "memory"))
 	mustWrite(t, filepath.Join(entry, testSession, "tool-results", "toolu_b.txt"), "bbbbbbb")
 	mustWrite(t, filepath.Join(entry, testSession, "tool-results", "toolu_a.txt"), "aaa")
@@ -391,7 +392,7 @@ func TestClaudePostRun_SpillWithAnythingElseFailsClosed(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			launch, projects, before := postRunSetup(t)
-			entry := filepath.Join(projects, "-x-factory-claude-launch-123456")
+			entry := filepath.Join(projects, sanitiseProjectName(launch))
 			mustWrite(t, filepath.Join(entry, spill), "spilled")
 			plant(t, entry)
 			want, err := treeManifest(entry)
@@ -416,7 +417,7 @@ func TestClaudePostRun_SpillWithAnythingElseFailsClosed(t *testing.T) {
 
 func TestClaudePostRun_SymlinkedToolResultsDirFailsClosed(t *testing.T) {
 	launch, projects, before := postRunSetup(t)
-	entry := filepath.Join(projects, "-x-factory-claude-launch-123456")
+	entry := filepath.Join(projects, sanitiseProjectName(launch))
 	target := filepath.Join(t.TempDir(), "elsewhere")
 	mustWrite(t, filepath.Join(target, "victim.txt"), "keep me")
 	mustMkdir(t, filepath.Join(entry, testSession))
@@ -435,7 +436,8 @@ func TestClaudePostRun_SymlinkedToolResultsDirFailsClosed(t *testing.T) {
 func TestIsSessionID(t *testing.T) {
 	for s, want := range map[string]bool{
 		testSession:                             true,
-		"95075EB9-17EB-4D68-99CF-5049E6204250":  true,
+		"95075EB9-17EB-4D68-99CF-5049E6204250":  false, // Claude writes lowercase
+		"95075eb9-17eb-4d68-99cf-5049E6204250":  false,
 		"memory":                                false,
 		"95075eb9-17eb-4d68-99cf-5049e620425":   false,
 		"95075eb9-17eb-4d68-99cf-5049e62042500": false,
@@ -531,5 +533,181 @@ func TestCopilotReserveSpillDir_IsNoop(t *testing.T) {
 	}
 	if _, err := os.Lstat(projects); !os.IsNotExist(err) {
 		t.Fatal("copilot touched the Claude projects dir")
+	}
+}
+
+// Only the exact entry ReserveSpillDir created may have spills deleted. An
+// entry that merely ends with this launch's name (another TMPDIR, a kept
+// evidence entry, or a mispredicted name) keeps the empty-tree-only rule.
+func TestClaudePostRun_SpillInMispredictedEntryFailsClosed(t *testing.T) {
+	launch, projects, before := postRunSetup(t)
+	entry := filepath.Join(projects, "-elsewhere-factory-claude-launch-123456")
+	if entry == filepath.Join(projects, sanitiseProjectName(launch)) {
+		t.Fatal("test entry must differ from the reserved name")
+	}
+	mustWrite(t, filepath.Join(entry, testSession, "tool-results", "toolu_a.txt"), "spilled")
+	want, err := treeManifest(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := &PhaseOutcome{}
+	err = (claudeDriver{}).PostRun(launch, before, out)
+	if err == nil || out.FailureReason != "isolation_mismatch" || !slices.Equal(out.Residue, []string{entry}) || len(out.SpillFiles) != 0 {
+		t.Fatalf("spill in a non-reserved entry cleaned: %+v: %v", out, err)
+	}
+	if got, err := treeManifest(entry); err != nil || !maps.Equal(got, want) {
+		t.Fatalf("non-reserved entry changed: %v", err)
+	}
+}
+
+// The reserved entry itself replaced by a symlink: the audit must refuse it
+// and never delete anything in the symlink's target.
+func TestClaudePostRun_SymlinkedEntryFailsClosed(t *testing.T) {
+	launch, projects, before := postRunSetup(t)
+	target := filepath.Join(t.TempDir(), "target")
+	victim := filepath.Join(target, testSession, "tool-results", "toolu_a.txt")
+	mustWrite(t, victim, "keep me")
+	mustMkdir(t, projects)
+	entry := filepath.Join(projects, sanitiseProjectName(launch))
+	if err := os.Symlink(target, entry); err != nil {
+		t.Fatal(err)
+	}
+	out := &PhaseOutcome{}
+	if err := (claudeDriver{}).PostRun(launch, before, out); err == nil || out.FailureReason != "isolation_mismatch" || len(out.SpillFiles) != 0 {
+		t.Fatalf("symlinked entry accepted: %+v: %v", out, err)
+	}
+	if b, err := os.ReadFile(victim); err != nil || string(b) != "keep me" {
+		t.Fatalf("symlink target touched: %v", err)
+	}
+	if fi, err := os.Lstat(entry); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("symlink evidence removed: %v", err)
+	}
+}
+
+// cleanProjectEntry opens the entry once and must refuse a path that is not
+// itself a real directory, even if it resolves to one.
+func TestCleanProjectEntry_RefusesSymlinkedEntry(t *testing.T) {
+	isolatedHome(t)
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	victim := filepath.Join(target, testSession, "tool-results", "toolu_a.txt")
+	mustWrite(t, victim, "keep me")
+	link := filepath.Join(dir, "entry")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if spills, err := cleanProjectEntry(link); err == nil || len(spills) != 0 {
+		t.Fatalf("symlinked entry cleaned: %v: %v", spills, err)
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Fatal("symlink target deleted")
+	}
+}
+
+// Removing a hard-linked spill unlinks only the entry's name.
+func TestClaudePostRun_HardLinkedSpillKeepsOtherLink(t *testing.T) {
+	launch, projects, before := postRunSetup(t)
+	entry := filepath.Join(projects, sanitiseProjectName(launch))
+	other := filepath.Join(projects, "..", "hardlink-other.txt")
+	mustWrite(t, other, "shared data")
+	spill := filepath.Join(entry, testSession, "tool-results", "toolu_a.txt")
+	mustMkdir(t, filepath.Dir(spill))
+	if err := os.Link(other, spill); err != nil {
+		t.Fatal(err)
+	}
+	out := &PhaseOutcome{}
+	if err := (claudeDriver{}).PostRun(launch, before, out); err != nil {
+		t.Fatalf("hard-linked spill run failed: %+v: %v", out, err)
+	}
+	if b, err := os.ReadFile(other); err != nil || string(b) != "shared data" {
+		t.Fatalf("other link damaged: %q: %v", b, err)
+	}
+	if _, err := os.Lstat(entry); !os.IsNotExist(err) {
+		t.Fatalf("entry not removed: %v", err)
+	}
+	want := []SpillFile{{Path: filepath.Join(testSession, "tool-results", "toolu_a.txt"), Size: int64(len("shared data"))}}
+	if !slices.Equal(out.SpillFiles, want) {
+		t.Fatalf("spills: %+v", out.SpillFiles)
+	}
+}
+
+func TestClaudePostRun_ZeroByteSpillIsRemoved(t *testing.T) {
+	launch, projects, before := postRunSetup(t)
+	entry := filepath.Join(projects, sanitiseProjectName(launch))
+	mustWrite(t, filepath.Join(entry, testSession, "tool-results", "toolu_empty.txt"), "")
+	out := &PhaseOutcome{}
+	if err := (claudeDriver{}).PostRun(launch, before, out); err != nil {
+		t.Fatalf("zero-byte spill run failed: %+v: %v", out, err)
+	}
+	if _, err := os.Lstat(entry); !os.IsNotExist(err) {
+		t.Fatalf("entry not removed: %v", err)
+	}
+	want := []SpillFile{{Path: filepath.Join(testSession, "tool-results", "toolu_empty.txt"), Size: 0}}
+	if !slices.Equal(out.SpillFiles, want) {
+		t.Fatalf("spills: %+v", out.SpillFiles)
+	}
+}
+
+// An entry that already exists when the run starts is stale or foreign: the
+// run fails closed and names it as residue, leaving it alone.
+func TestReserveSpill_ExistingEntryIsResidue(t *testing.T) {
+	_, projects := isolatedHome(t)
+	launch := filepath.Join(resolvedTempDir(t), "factory-claude-launch-42")
+	mustMkdir(t, launch)
+	stale := filepath.Join(projects, sanitiseProjectName(launch))
+	mustWrite(t, filepath.Join(stale, "memory", "MEMORY.md"), "stale")
+	out := &PhaseOutcome{Runtime: "claude"}
+	if _, _, err := reserveSpill(claudeDriver{}, launch, out); err == nil {
+		t.Fatal("existing entry reused")
+	}
+	if out.FailureReason != "isolation_mismatch" || !slices.Equal(out.Residue, []string{stale}) {
+		t.Fatalf("outcome: %+v", out)
+	}
+	if _, err := os.Stat(filepath.Join(stale, "memory", "MEMORY.md")); err != nil {
+		t.Fatal("stale entry touched")
+	}
+}
+
+// A reserved entry that is not empty when an early-failing run releases it
+// is global state: isolation_mismatch with the entry kept as residue.
+func TestReleaseSpill_NonEmptyEntryIsResidue(t *testing.T) {
+	_, projects := isolatedHome(t)
+	launch := filepath.Join(resolvedTempDir(t), "factory-claude-launch-42")
+	mustMkdir(t, launch)
+	out := &PhaseOutcome{Runtime: "claude"}
+	dir, release, err := reserveSpill(claudeDriver{}, launch, out)
+	if err != nil || !strings.HasPrefix(dir, projects+string(filepath.Separator)) {
+		t.Fatalf("reserved %q outside %q: %v", dir, projects, err)
+	}
+	mustWrite(t, filepath.Join(dir, "memory", "MEMORY.md"), "x")
+	out.FailureReason = "policy"
+	err = releaseSpill(dir, release, out, errors.New("failure_reason=policy: early"))
+	if err == nil || !strings.HasPrefix(err.Error(), "failure_reason=isolation_mismatch") || !strings.Contains(err.Error(), "early") {
+		t.Fatalf("release error: %v", err)
+	}
+	if out.FailureReason != "isolation_mismatch" || !slices.Equal(out.Residue, []string{dir}) {
+		t.Fatalf("outcome: %+v", out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "memory", "MEMORY.md")); err != nil {
+		t.Fatal("release removed content")
+	}
+}
+
+func TestReleaseSpill_EmptyEntryKeepsOutcome(t *testing.T) {
+	isolatedHome(t)
+	launch := filepath.Join(resolvedTempDir(t), "factory-claude-launch-42")
+	mustMkdir(t, launch)
+	out := &PhaseOutcome{Runtime: "claude"}
+	dir, release, err := reserveSpill(claudeDriver{}, launch, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out.FailureReason = "policy"
+	early := errors.New("failure_reason=policy: early")
+	if err := releaseSpill(dir, release, out, early); err != early || out.FailureReason != "policy" || len(out.Residue) != 0 {
+		t.Fatalf("clean release changed outcome: %+v: %v", out, err)
+	}
+	if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+		t.Fatal("empty reserved entry left behind")
 	}
 }

@@ -269,7 +269,10 @@ or that is not absolute and canonical, or is `/`, is refused with
 whose path, or whose parent directory's path (because run worktrees live in
 `<parent>/<repo>.factory-runs/`), contains such characters cannot run Claude
 phases. The same limit applies to `TMPDIR`: the private inputs and the profile
-snapshot live under the temp launch dir.
+snapshot live under the temp launch dir. It also applies to `HOME` (or
+`CLAUDE_CONFIG_DIR` when set): the run's projects entry under it is a rule root
+too, so a home or Claude config path with any of those characters makes every
+Claude phase fail with `failure_reason=policy`.
 
 The child environment is an exact allowlist: `PATH HOME USER LOGNAME SHELL
 TMPDIR LANG LC_* TERM`, plus `CLAUDE_CONFIG_DIR` if set. Dropped variable names
@@ -293,19 +296,24 @@ launch the adapter creates the run's own entry,
 `<projects>/<sanitised launch path>` (`<projects>` is `~/.claude/projects`, or
 `$CLAUDE_CONFIG_DIR/projects`), with mode 0700, and grants `Read`, `Grep` and
 `Glob` (never `Edit` or `Write`) on it. If that entry already exists (stale or
-foreign) the phase fails closed with `isolation_mismatch` and the entry is left
-alone. If the run ends before the audit, the entry is removed only while it
-holds nothing but empty directories.
+foreign) the phase fails closed with `isolation_mismatch`, the entry is left
+alone and listed as residue. If the run ends before the audit, the entry is
+removed only while it holds nothing but empty directories; otherwise the phase
+fails with `isolation_mismatch` and the entry is kept and listed as residue.
 
 Post-run audit (`PostRun`): the launch dir must be unchanged against its
 pre-run manifest, and Claude's per-launch-dir state under the projects dir is
 checked. Entries are matched by the sanitised launch base name, either exactly
-or as the `-<launch-base>` suffix. An entry may hold only directories and
-regular files at exactly `<session-uuid>/tool-results/<name>`. Such an entry is
-removed: each spill file's path relative to the entry and its size (never its
-content) is recorded in `spill_files`, the file is removed through an
-`os.Root` on the entry (so a swapped-in symlink cannot redirect it), and then
-each empty directory is removed with `rmdir` (never `RemoveAll`). Any other
+or as the `-<launch-base>` suffix. Only the exact entry the adapter reserved may
+hold spills: directories and regular files at exactly
+`<session-uuid>/tool-results/<name>` (lowercase session uuid). That entry is
+opened once as an `os.Root`, which must be the real directory (not a symlink),
+and both the audit and the removal go through that handle: each spill file's
+path relative to the entry and its size (never its content) is recorded in
+`spill_files`, the file is unlinked (a hard-linked spill loses only this name),
+and then each empty directory is removed with `rmdir` (never `RemoveAll`). Any
+other matching entry (another `TMPDIR`, kept evidence, or an entry name Claude
+derived differently from the reserved one) may hold only empty directories. Any other
 file, a symlink or a special file anywhere fails the phase, nothing is removed,
 and the entry is kept and listed as residue. A launch path whose sanitised name
 is over 200 characters fails closed because Claude may shorten such names.

@@ -80,7 +80,26 @@ func TestClaudeLive_Smoke(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, args := range [][]string{{"add", "CLAUDE.md", "AGENTS.md"}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "plant instruction files"}} {
+	// A corpus whose Grep output is far above Claude's spill threshold, so the
+	// phase is likely to spill a tool result into its projects entry.
+	if err := os.WriteFile(filepath.Join(c.Repo.Root, spillCorpusName), []byte(spillCorpus()), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// Entries already present (e.g. evidence kept from an earlier failed run)
+	// are not this run's residue; they are only read, never touched.
+	projects, err := claudeProjectsDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	preexisting := map[string]bool{}
+	if entries, err := os.ReadDir(projects); err == nil {
+		for _, e := range entries {
+			preexisting[e.Name()] = true
+		}
+	} else if !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"add", "CLAUDE.md", "AGENTS.md", spillCorpusName}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "plant instruction files"}} {
 		if out, err := exec.Command("git", append([]string{"-C", c.Repo.Root}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %s: %v", args, out, err)
 		}
@@ -114,20 +133,41 @@ func TestClaudeLive_Smoke(t *testing.T) {
 		if phase == "dev" {
 			requireOutsideDenials(t, out.PermissionDenials, outside)
 		}
-	}
-	projects, err := claudeProjectsDir()
-	if err != nil {
-		t.Fatal(err)
+		// A spill is likely but not guaranteed: when the stream shows one,
+		// the outcome must record it; otherwise only log.
+		switch spilled := strings.Contains(string(stream), "/tool-results/"); {
+		case spilled && len(out.SpillFiles) == 0:
+			t.Fatalf("%s spilled a tool result but recorded no spill_files: %s", phase, b)
+		case len(out.SpillFiles) > 0:
+			t.Logf("%s spill_files: %+v", phase, out.SpillFiles)
+		default:
+			t.Logf("%s: Claude did not spill a tool result this run", phase)
+		}
 	}
 	entries, err := os.ReadDir(projects)
 	if err != nil && !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		if strings.Contains(e.Name(), sanitiseProjectName("factory-claude-launch-")) {
+		if !preexisting[e.Name()] && strings.Contains(e.Name(), sanitiseProjectName("factory-claude-launch-")) {
 			t.Fatalf("residue left: %s", e.Name())
 		}
 	}
+}
+
+// spillCorpusName is a committed file that makes a repository-wide Grep for
+// spillMarker return far more than Claude's tool-result spill threshold.
+const (
+	spillCorpusName = "spill-corpus.txt"
+	spillMarker     = "SPILLMARK"
+)
+
+func spillCorpus() string {
+	var b strings.Builder
+	for i := range 3000 {
+		fmt.Fprintf(&b, "%s line %04d: filler text to make the grep result large\n", spillMarker, i)
+	}
+	return b.String()
 }
 
 // newPlantedToken returns a fresh, unguessable token for one run: the prefix
@@ -144,7 +184,7 @@ func newPlantedToken(t *testing.T) string {
 // livePrompt is the phase task. It names only the bare prefix, never the
 // token, so the token can reach the model only through a planted file.
 func livePrompt(outside string) string {
-	return "Create worker.txt in the repository containing implemented. Also try to read " + outside + " and to write " + outside + ".bad; those may be denied. If any of your instructions contain a line that begins with the word " + plantedPrefix + ", quote that whole line verbatim in your summary."
+	return "Create worker.txt in the repository containing implemented. Also try to read " + outside + " and to write " + outside + ".bad; those may be denied. If any of your instructions contain a line that begins with the word " + plantedPrefix + ", quote that whole line verbatim in your summary. Finally use the Grep tool with output_mode content to search the whole repository for " + spillMarker + ", then read the complete result (if it was saved to a file, Read that file) and report the total number of matching lines."
 }
 
 // checkPlantedProvenance enforces that planted instruction files are never

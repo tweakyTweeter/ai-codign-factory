@@ -49,15 +49,16 @@ func cleanProjectEntry(path string) ([]SpillFile, error) {
 	return cleanTree(path, true)
 }
 
-// isSpillPath reports whether rel (relative to a projects entry) is where
-// Claude spills a large tool result: <session-uuid>/tool-results/<name>.
+// isSpillPath reports whether rel (slash-separated, relative to a projects
+// entry) is where Claude spills a large tool result:
+// <session-uuid>/tool-results/<name>.
 func isSpillPath(rel string) bool {
-	parts := strings.Split(rel, string(filepath.Separator))
+	parts := strings.Split(rel, "/")
 	return len(parts) == 3 && isSessionID(parts[0]) && parts[1] == "tool-results" && parts[2] != "" && parts[2] != "." && parts[2] != ".."
 }
 
-// isSessionID reports whether s has the 8-4-4-4-12 hex shape of a Claude
-// session id.
+// isSessionID reports whether s has the lowercase 8-4-4-4-12 hex shape of a
+// Claude session id (Claude writes lowercase; anything else fails closed).
 func isSessionID(s string) bool {
 	if len(s) != 36 {
 		return false
@@ -69,7 +70,7 @@ func isSessionID(s string) bool {
 				return false
 			}
 		default:
-			if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f' || r >= 'A' && r <= 'F') {
+			if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
 				return false
 			}
 		}
@@ -77,13 +78,32 @@ func isSessionID(s string) bool {
 	return true
 }
 
-// cleanTree audits path without following symlinks, then removes it: spill
-// files (only when allowSpill) through an os.Root, which cannot escape the
-// entry even if a directory is swapped for a symlink, then each directory
-// depth-first with rmdir. Nothing is removed unless the whole tree passes.
+// cleanTree opens path once as an os.Root, proves the handle is the real
+// directory at path (not a symlink to one), and then audits and removes
+// through that handle, so the audit and the deletes see the same tree and
+// never follow symlinks. Spill files (only when allowSpill) are removed with
+// Root.Remove after an Lstat regular-file check; directories are removed
+// depth-first with rmdir(2), which only ever removes empty directories.
+// Nothing is removed unless the whole tree passes the audit.
 func cleanTree(path string, allowSpill bool) ([]SpillFile, error) {
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	lfi, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	rfi, err := root.Stat(".")
+	if err != nil {
+		return nil, err
+	}
+	if !lfi.IsDir() || !os.SameFile(lfi, rfi) {
+		return nil, fmt.Errorf("%s is not a real directory (%s)", path, lfi.Mode().Type())
+	}
 	var dirs, files []string
-	err := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(root.FS(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -91,46 +111,39 @@ func cleanTree(path string, allowSpill bool) ([]SpillFile, error) {
 			dirs = append(dirs, p)
 			return nil
 		}
-		rel, relErr := filepath.Rel(path, p)
-		if allowSpill && relErr == nil && d.Type().IsRegular() && isSpillPath(rel) {
-			files = append(files, rel)
+		if allowSpill && d.Type().IsRegular() && isSpillPath(p) {
+			files = append(files, p)
 			return nil
 		}
-		return fmt.Errorf("%s is not empty: %s is %s", path, p, d.Type())
+		return fmt.Errorf("%s is not empty: %s is %s", path, filepath.Join(path, filepath.FromSlash(p)), d.Type())
 	})
 	if err != nil {
 		return nil, err
 	}
 	var spills []SpillFile
-	if len(files) > 0 {
-		root, err := os.OpenRoot(path)
+	for _, rel := range files {
+		fi, err := root.Lstat(rel)
 		if err != nil {
-			return nil, err
+			return spills, err
 		}
-		defer root.Close()
-		for _, rel := range files {
-			fi, err := root.Lstat(rel)
-			if err != nil {
-				return spills, err
-			}
-			if !fi.Mode().IsRegular() {
-				return spills, fmt.Errorf("%s changed type during removal", filepath.Join(path, rel))
-			}
-			if err := root.Remove(rel); err != nil {
-				return spills, err
-			}
-			spills = append(spills, SpillFile{Path: rel, Size: fi.Size()})
+		if !fi.Mode().IsRegular() {
+			return spills, fmt.Errorf("%s changed type during removal", filepath.Join(path, filepath.FromSlash(rel)))
 		}
+		if err := root.Remove(rel); err != nil {
+			return spills, err
+		}
+		spills = append(spills, SpillFile{Path: filepath.FromSlash(rel), Size: fi.Size()})
 	}
 	for i := len(dirs) - 1; i >= 0; i-- {
-		fi, err := os.Lstat(dirs[i])
+		dir := filepath.Join(path, filepath.FromSlash(dirs[i]))
+		fi, err := os.Lstat(dir)
 		if err != nil {
 			return spills, err
 		}
 		if !fi.IsDir() {
-			return spills, fmt.Errorf("%s changed type during removal", dirs[i])
+			return spills, fmt.Errorf("%s changed type during removal", dir)
 		}
-		if err := removeDirOnly(dirs[i]); err != nil {
+		if err := removeDirOnly(dir); err != nil {
 			return spills, err
 		}
 	}
@@ -157,7 +170,8 @@ func (claudeDriver) ReserveSpillDir(launch string) (string, func() error, error)
 	}
 	dir := filepath.Join(projects, sanitiseProjectName(launch))
 	if err := os.Mkdir(dir, 0700); err != nil {
-		return "", nil, fmt.Errorf("cannot reserve Claude projects entry %s: %w", dir, err)
+		// dir is returned so the caller can record an existing entry as residue.
+		return dir, nil, fmt.Errorf("cannot reserve Claude projects entry %s: %w", dir, err)
 	}
 	release := func() error {
 		if _, err := os.Lstat(dir); os.IsNotExist(err) {
@@ -221,12 +235,21 @@ func (claudeDriver) PostRun(launch string, before map[string]string, out *PhaseO
 		fail(err)
 	}
 	token := sanitiseProjectName(filepath.Base(launch))
+	reserved := sanitiseProjectName(launch)
 	for _, e := range entries {
 		if !ownsProjectEntry(e.Name(), token) {
 			continue
 		}
 		path := filepath.Join(projects, e.Name())
-		spills, err := cleanProjectEntry(path)
+		// Spills are deleted only in the exact entry ReserveSpillDir created.
+		// Any other entry ending in this launch's name (another TMPDIR, kept
+		// evidence, a name Claude derived differently) must be empty.
+		var spills []SpillFile
+		if e.Name() == reserved {
+			spills, err = cleanProjectEntry(path)
+		} else {
+			err = removeEmptyTree(path)
+		}
 		out.SpillFiles = append(out.SpillFiles, spills...)
 		if err != nil {
 			out.Residue = append(out.Residue, path)

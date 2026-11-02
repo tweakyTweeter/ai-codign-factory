@@ -292,17 +292,14 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 	}
 	// The runtime's spill dir lives outside the launch dir (Claude: its own
 	// projects entry). Until PostRun audits it, release removes it if empty.
-	spill, release, err := d.ReserveSpillDir(launch)
+	spill, release, err := reserveSpill(d, launch, out)
 	if err != nil {
-		if out.Runtime != "" {
-			out.FailureReason = "isolation_mismatch"
-		}
 		return err
 	}
 	audited := false
 	defer func() {
 		if !audited {
-			err = errors.Join(err, release())
+			err = releaseSpill(spill, release, out, err)
 		}
 	}()
 	roots.Spill = spill
@@ -470,4 +467,36 @@ func InspectPhasePolicy(ctx context.Context, phase, role string, argv []string) 
 		}
 	}
 	return pr, nil
+}
+
+// reserveSpill reserves the driver's spill dir (see Driver.ReserveSpillDir).
+// An entry that already exists is stale or foreign: it fails closed, is left
+// alone and is named in out.Residue.
+func reserveSpill(d Driver, launch string, out *PhaseOutcome) (string, func() error, error) {
+	dir, release, err := d.ReserveSpillDir(launch)
+	if err != nil {
+		if out.Runtime != "" {
+			out.FailureReason = "isolation_mismatch"
+			if _, lErr := os.Lstat(dir); dir != "" && lErr == nil {
+				out.Residue = append(out.Residue, dir)
+			}
+		}
+		return "", nil, err
+	}
+	return dir, release, nil
+}
+
+// releaseSpill releases a spill dir that PostRun never audited (the run ended
+// before the model ran). If the dir is no longer empty it is kept as residue
+// and the phase fails with isolation_mismatch, which outranks the early error.
+func releaseSpill(dir string, release func() error, out *PhaseOutcome, err error) error {
+	rErr := release()
+	if rErr == nil {
+		return err
+	}
+	if out.Runtime != "" {
+		out.FailureReason = "isolation_mismatch"
+		out.Residue = append(out.Residue, dir)
+	}
+	return errors.Join(fmt.Errorf("failure_reason=isolation_mismatch: %s left state in its spill dir: %w", out.Runtime, rErr), err)
 }
