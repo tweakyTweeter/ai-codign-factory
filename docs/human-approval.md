@@ -103,11 +103,14 @@ decision steps, in section 7, and is treated as data:
   a heading, code block, link, image or HTML. File paths are in a fenced block
   longer than any backtick run they contain.
 - Strings shaped like decision tokens are rewritten, for example
-  `factory-approve(quoted):`, so the only copyable `factory-approve:`,
-  `factory-reject:` and `factory-review:` strings in a gate are the
-  factory's own.
+  `factory-approve(quoted):`, so outside the embedded diff the only copyable
+  `factory-approve:`, `factory-reject:` and `factory-review:` strings in a gate
+  are the factory's own.
 
-The embedded candidate diff in section 8 stays verbatim inside its fence. The
+The embedded candidate diff in section 8 stays verbatim inside its fence, so it
+can contain token-shaped text. Such text cannot approve anything: a token is
+bound to the candidate's fingerprint, which the candidate cannot know about
+itself. Copy decision tokens only from **How to approve or reject**. The
 description is never cut: if it would exceed 64,000 bytes, the embedded diff is
 replaced by a pointer to `candidate.diff`, and publication is refused if that
 is still too long. The description never decides anything: only the gate's

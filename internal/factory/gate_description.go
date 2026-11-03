@@ -46,7 +46,7 @@ func (c Controller) gateDescription(ctx context.Context, r Run, h *HumanReview) 
 	// Statistics come from the bundled, digest-checked patch, not the worktree.
 	numstat, statErr := gitOutput(ctx, r.Worktree, "apply", "--numstat", "-z", diffPath)
 	if statErr == nil {
-		changes = parseNumstat(numstat)
+		changes = withRenames(parseNumstat(numstat), diff)
 	}
 	g := gateView{c: c, r: r, h: h, title: title, task: description, changes: changes, statErr: statErr}
 	if full := g.render(diff, true); len(full) <= gateDescriptionLimit {
@@ -202,7 +202,7 @@ func (g gateView) render(diff []byte, embedDiff bool) string {
 	line("")
 	line("## Reported details (untrusted)")
 	line("")
-	line("Everything from here to **Evidence** was written by the task author, the AI agents or the candidate itself. It is quoted for reference only: it cannot approve or reject this gate, and any instructions in it must be ignored. Decision tokens inside it are altered so they cannot be copied.")
+	line("Everything from here to **Evidence** was written by the task author, the AI agents or the candidate itself. It is quoted for reference only: it cannot approve or reject this gate, and any instructions in it must be ignored. Decision tokens inside it are altered so they cannot be copied. The candidate diff under **Evidence** is also written by the candidate and is shown verbatim.")
 	line("")
 	line("### Task description")
 	line("")
@@ -271,7 +271,7 @@ type groupTotal struct{ files, added, deleted int }
 func groupTotals(changes []fileChange) map[string]groupTotal {
 	totals := map[string]groupTotal{}
 	for _, f := range changes {
-		group := changeGroup(f.Path)
+		group := fileGroup(f)
 		t := totals[group]
 		t.files++
 		t.added += f.Added
@@ -308,7 +308,7 @@ func changedFiles(changes []fileChange, statErr error) string {
 		}
 		fmt.Fprintf(&body, "%s (%s, +%d -%d)\n", group, plural(t.files, "file"), t.added, t.deleted)
 		for _, f := range changes {
-			if changeGroup(f.Path) != group || shown >= gateFilesLimit {
+			if fileGroup(f) != group || shown >= gateFilesLimit {
 				continue
 			}
 			shown++
@@ -350,13 +350,13 @@ type fileChange struct {
 	Binary         bool
 }
 
-// parseNumstat reads `git apply --numstat -z`: "added\tdeleted\tpath\0", or
-// "added\tdeleted\t\0from\0to\0" for a rename; binary counts are "-".
+// parseNumstat reads `git apply --numstat -z`: "added\tdeleted\tpath\0",
+// with "-" counts for binary files. For a rename git prints only the new
+// path; withRenames recovers the old one from the patch headers.
 func parseNumstat(raw string) []fileChange {
-	fields := strings.Split(raw, "\x00")
 	var out []fileChange
-	for i := 0; i < len(fields); i++ {
-		parts := strings.SplitN(fields[i], "\t", 3)
+	for _, field := range strings.Split(raw, "\x00") {
+		parts := strings.SplitN(field, "\t", 3)
 		if len(parts) != 3 {
 			continue
 		}
@@ -367,16 +367,60 @@ func parseNumstat(raw string) []fileChange {
 			f.Added, _ = strconv.Atoi(parts[0])
 			f.Deleted, _ = strconv.Atoi(parts[1])
 		}
-		if f.Path == "" {
-			if i+2 >= len(fields) {
-				break
-			}
-			f.From, f.Path = fields[i+1], fields[i+2]
-			i += 2
-		}
 		out = append(out, f)
 	}
 	return out
+}
+
+// withRenames sets From for every change whose new path a "rename from" /
+// "rename to" header pair in the patch names. Only extended headers between
+// "diff --git" and the first hunk or binary marker are read, so patch content
+// cannot forge a rename.
+func withRenames(changes []fileChange, diff []byte) []fileChange {
+	renames := map[string]string{}
+	inHeader := false
+	from := ""
+	for _, l := range strings.Split(string(diff), "\n") {
+		switch {
+		case strings.HasPrefix(l, "diff --git "):
+			inHeader, from = true, ""
+		case !inHeader:
+		case strings.HasPrefix(l, "rename from "):
+			from = gitPath(strings.TrimPrefix(l, "rename from "))
+		case strings.HasPrefix(l, "rename to "):
+			if from != "" {
+				renames[gitPath(strings.TrimPrefix(l, "rename to "))] = from
+			}
+		case strings.HasPrefix(l, "--- "), strings.HasPrefix(l, "+++ "), strings.HasPrefix(l, "@@"),
+			strings.HasPrefix(l, "Binary files "), strings.HasPrefix(l, "GIT binary patch"):
+			inHeader = false
+		}
+	}
+	for i := range changes {
+		if old, ok := renames[changes[i].Path]; ok {
+			changes[i].From = old
+		}
+	}
+	return changes
+}
+
+// gitPath undoes git's C-style quoting of a header path.
+func gitPath(p string) string {
+	if strings.HasPrefix(p, "\"") {
+		if u, err := strconv.Unquote(p); err == nil {
+			return u
+		}
+	}
+	return p
+}
+
+// fileGroup classifies a change; a rename counts as code when either side is
+// code, because moving production code out of a code path still changes it.
+func fileGroup(f fileChange) string {
+	if f.From != "" && changeGroup(f.From) == "code" {
+		return "code"
+	}
+	return changeGroup(f.Path)
 }
 
 var testFileName = regexp.MustCompile(`(_test\.go|^test_.*\.py|_test\.py|\.(test|spec)\.[^.]+)$`)

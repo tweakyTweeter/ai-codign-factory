@@ -295,16 +295,74 @@ func TestChangeGroup_ClassifiesPaths(t *testing.T) {
 	}
 }
 
-func TestParseNumstat_HandlesBinaryRenameAndOddPaths(t *testing.T) {
-	raw := "3\t1\ta.go\x00-\t-\tbin\x00" + "2\t0\t\x00old name\x00new\nname\x00"
-	got := parseNumstat(raw)
-	want := []fileChange{{Path: "a.go", Added: 3, Deleted: 1}, {Path: "bin", Binary: true}, {Path: "new\nname", Added: 2, From: "old name"}}
-	if len(got) != len(want) {
-		t.Fatalf("got %+v", got)
+// TestGateChanges_UseRealGitNumstatAndRenames feeds parseNumstat and
+// withRenames the output git really produces for a staged move of production
+// code into tests, a binary file and a path with a newline.
+func TestGateChanges_UseRealGitNumstatAndRenames(t *testing.T) {
+	root := t.TempDir()
+	runGit(t, root, "init", "-q")
+	writeFile(t, filepath.Join(root, "internal", "check.go"), "package internal\n\nfunc Check() bool { return true }\n")
+	writeFile(t, filepath.Join(root, "keep.txt"), "keep\n")
+	runGit(t, root, "add", ".")
+	runGit(t, root, "commit", "-qm", "base")
+	if err := os.MkdirAll(filepath.Join(root, "tests"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("entry %d = %+v, want %+v", i, got[i], want[i])
+	runGit(t, root, "mv", "internal/check.go", "tests/check_test.go")
+	writeFile(t, filepath.Join(root, "bin"), "\x00\x01binary")
+	writeFile(t, filepath.Join(root, "odd\nname.go"), "package odd\n")
+	runGit(t, root, "add", ".")
+	diff, err := gitOutput(t.Context(), root, "diff", "HEAD", "--binary")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diffPath := filepath.Join(t.TempDir(), "candidate.diff")
+	writeFile(t, diffPath, diff+"\n") // gitOutput trims the final newline
+	numstat, err := gitOutput(t.Context(), root, "apply", "--numstat", "-z", diffPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]fileChange{}
+	for _, f := range withRenames(parseNumstat(numstat), []byte(diff)) {
+		got[f.Path] = f
+	}
+	want := map[string]fileChange{
+		"tests/check_test.go": {Path: "tests/check_test.go", From: "internal/check.go"},
+		"bin":                 {Path: "bin", Binary: true},
+		"odd\nname.go":        {Path: "odd\nname.go", Added: 1},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("changes = %+v", got)
+	}
+	for p, w := range want {
+		if got[p] != w {
+			t.Errorf("change %q = %+v, want %+v", p, got[p], w)
 		}
+	}
+	// Moving production code into tests still changes production code.
+	if g := fileGroup(got["tests/check_test.go"]); g != "code" {
+		t.Errorf("renamed production file grouped as %q, want code", g)
+	}
+	list := changedFiles(withRenames(parseNumstat(numstat), []byte(diff)), nil)
+	if !strings.Contains(list, "(renamed from internal/check.go)") {
+		t.Errorf("changed files do not show the rename source:\n%s", list)
+	}
+}
+
+func TestWithRenames_IgnoresRenameLinesInsideHunks(t *testing.T) {
+	diff := "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1 +1,2 @@\n x\nrename from internal/a.go\nrename to x.go\n"
+	got := withRenames([]fileChange{{Path: "x.go"}}, []byte(diff))
+	if got[0].From != "" {
+		t.Fatalf("hunk text forged a rename: %+v", got[0])
+	}
+}
+
+func writeFile(t *testing.T, name, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
