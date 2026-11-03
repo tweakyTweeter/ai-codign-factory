@@ -15,9 +15,12 @@ factory review-publish --repo /path/to/repository --run RUN_ID
 ```
 
 The commands return JSON with the review artifacts and request information.
-Use the exact approval token shown by the published request as the entire
-**Add approval note** in Scotty, then click **Approve** only after inspecting
-the candidate and evidence. Afterwards:
+Open the gate in Scotty's **Needs You** view; its description is laid out as
+described in [The gate description](#the-gate-description). Click **Approve**,
+choose **Add approval note**, and paste the approval token from the gate's
+**How to approve or reject** section as the note, only after inspecting the
+candidate and evidence. Clicking **Approve** without that note is recorded as
+not approved. Afterwards:
 
 ```sh
 factory review-sync --repo /path/to/repository --run RUN_ID
@@ -49,6 +52,66 @@ was created. Modified planning text, profile snapshots, context, logs or other
 completed outputs invalidate the request. A legacy run without these seals
 cannot be retroactively blessed by hashing its current files: start a new
 verified run. Already completed integrations remain historical results.
+
+## The gate description
+
+`factory review-publish` writes the gate description once, persists it with the
+publish intent, and on every later sync requires the native gate to match it
+byte for byte. The tokens and the decision rules are unchanged; only the
+layout is designed for a human. Sections appear in this order:
+
+1. **Title line**: `Factory approval request: TASK - TITLE`, followed by a
+   short warning that clicking **Approve** alone does not approve the change.
+2. **Summary**: the run, whether every phase succeeded, the QA and Review
+   finding counts, the number of changed files with `+`/`-` line counts, and
+   whether production code changed.
+3. **Context**: task and run IDs, base HEAD, and one line per phase with its
+   exit code, recorded verdict and finding counts.
+4. **Type of change**: totals per group (code, tests, docs, config) and whether
+   production code changed. Groups come from a path heuristic for orientation
+   only: test files and `testdata` are tests; Markdown, `docs/` and README-style
+   files are docs; JSON/YAML/TOML, module files, build files and dot-paths are
+   config; everything else is code. Counts come from `git apply --numstat` on
+   the bundled `candidate.diff`.
+5. **What you are approving**: this exact candidate (run, fingerprint, base
+   HEAD) and nothing else. Approval does not commit, push, merge, integrate or
+   close anything; it only allows a later, separate `factory integrate`. The
+   request marker is shown here.
+6. **How to approve or reject**: numbered steps, with the approval token and
+   the rejection token each alone in its own code block for copying, the
+   warning that **Approve** without the note is not approval, a `bd gate
+   resolve` example for rejection and the `factory review-sync` command.
+7. **Reported details (untrusted)**: the task description, Dev's summary of
+   what it did, each QA and Review summary, every finding with its severity
+   (at most 15 per phase are quoted; the rest are counted, with a pointer to
+   `result.json`), and the per-file change list.
+8. **Evidence**: the terminal `factory review` command, bundle, manifest,
+   candidate and index diffs, phase logs and results, and the candidate diff
+   itself when it is at most 16,000 bytes.
+
+Everything in sections 1 to 6 is written by the factory, except the task title
+on the title line, which is flattened to one escaped line of at most 100
+bytes. Text written by the task author, the agents or the candidate (task
+description, summaries, findings and file paths) appears only after the
+decision steps, in section 7, and is treated as data:
+
+- It is bounded (task description 1,500 bytes, Dev summary 2,500, other
+  summaries 1,200, each finding 400, 50 files, 200 bytes per path); truncation
+  is stated together with the full file to read.
+- Prose is shown as a blockquote with Markdown special characters
+  backslash-escaped and control/format characters removed, so it cannot open
+  a heading, code block, link, image or HTML. File paths are in a fenced block
+  longer than any backtick run they contain.
+- Strings shaped like decision tokens are rewritten, for example
+  `factory-approve(quoted):`, so the only copyable `factory-approve:`,
+  `factory-reject:` and `factory-review:` strings in a gate are the
+  factory's own.
+
+The embedded candidate diff in section 8 stays verbatim inside its fence. The
+description is never cut: if it would exceed 64,000 bytes, the embedded diff is
+replaced by a pointer to `candidate.diff`, and publication is refused if that
+is still too long. The description never decides anything: only the gate's
+close reason, checked against the exact tokens, does.
 
 ## Decision boundaries
 
@@ -128,10 +191,9 @@ hold; it does not repair or undo files, reapprove changes or complete the task.
 ## What Scotty displays
 
 Scotty 0.3.2 renders a ready human gate's full Markdown description directly in
-**Needs You**. A review request should include the exact candidate identity,
-check and QA/review summaries, a diff preview and the local full-evidence
-location. New untracked files must appear as additions, not disappear as they
-do in an ordinary `git diff`.
+**Needs You**, so the decision steps near the top are visible without
+scrolling past evidence. New untracked files appear as additions in the change
+list and diff, not disappearing as they do in an ordinary `git diff`.
 
 Local `file://` links are deliberately filtered by Scotty's Markdown renderer.
 Use the displayed terminal command to inspect the full local artifacts.

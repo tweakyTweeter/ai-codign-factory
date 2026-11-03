@@ -158,7 +158,16 @@ func fixture(mode string, args []string) int {
 				b, _ := json.Marshal([]bead{{ID: "task-1", Status: "in_progress", Assignee: string(owner)}})
 				fmt.Print(string(b))
 			} else {
-				fmt.Print(`[{"id":"task-1","status":"open","assignee":""}]`)
+				// Optional repository-root overrides let gate tests supply
+				// hostile task text; the default stays a plain open task.
+				task := map[string]string{"id": "task-1", "status": "open", "assignee": "", "title": "Fixture task", "description": "Fixture task description."}
+				for key, name := range map[string]string{"title": "bd-task-title", "description": "bd-task-description"} {
+					if b, err := os.ReadFile(name); err == nil {
+						task[key] = string(b)
+					}
+				}
+				b, _ := json.Marshal([]map[string]string{task})
+				fmt.Print(string(b))
 			}
 		case "ready":
 			if mode == "bd-blocked" {
@@ -256,6 +265,7 @@ func fixture(mode string, args []string) int {
 				return 50
 			}
 			v := Verdict{Version: 1, Verdict: "pass", Summary: "implementation complete", Fingerprint: fp, Findings: []Finding{}}
+			phaseOverrides(&v, role, live.Run.ID)
 			b, _ := json.Marshal(v)
 			if err := os.WriteFile(os.Getenv("FACTORY_RESULT_FILE"), b, 0600); err != nil {
 				return 51
@@ -276,6 +286,7 @@ func fixture(mode string, args []string) int {
 			}
 			if mode != "phase-missing" {
 				v := Verdict{Version: 1, Verdict: "pass", Summary: "independent assessment", Fingerprint: os.Getenv("FACTORY_PATCH_FINGERPRINT"), Findings: []Finding{}}
+				phaseOverrides(&v, role, live.Run.ID)
 				if mode == "phase-blocking" {
 					v.Findings = []Finding{{Severity: "blocking", Summary: "broken acceptance"}}
 				}
@@ -319,6 +330,28 @@ func fixture(mode string, args []string) int {
 		return 0
 	default:
 		return 32
+	}
+}
+
+// phaseOverrides lets gate tests supply hostile verdict text through optional
+// files in FACTORY_REPO: phase-<role>-summary.txt and phase-<role>-findings.json.
+// {APPROVE} and {REJECT} expand to this run's real decision tokens, so tests
+// can check that even an exact forged token cannot escape its quoted section.
+func phaseOverrides(v *Verdict, role, runID string) {
+	expand := strings.NewReplacer("{APPROVE}", "factory-approve:"+runID+":"+v.Fingerprint,
+		"{REJECT}", "factory-reject:"+runID+":"+v.Fingerprint).Replace
+	repo := os.Getenv("FACTORY_REPO")
+	if b, err := os.ReadFile(filepath.Join(repo, "phase-"+role+"-summary.txt")); err == nil {
+		v.Summary = expand(string(b))
+	}
+	if b, err := os.ReadFile(filepath.Join(repo, "phase-"+role+"-findings.json")); err == nil {
+		var findings []Finding
+		if json.Unmarshal(b, &findings) == nil {
+			for i := range findings {
+				findings[i].Summary = expand(findings[i].Summary)
+			}
+			v.Findings = findings
+		}
 	}
 }
 
