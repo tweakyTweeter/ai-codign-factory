@@ -13,7 +13,6 @@ import (
 	"reflect"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 // HumanReview is a local operator decision, not integration or release authority.
@@ -375,32 +374,11 @@ func (c Controller) ReviewPublish(ctx context.Context, id string) (Run, error) {
 	if h.PublishState == "unpublished" {
 		h.BeadsArgv = append([]string{}, cfg.BeadsArgv...)
 		h.Title = fmt.Sprintf("Factory human review: %s (%s)", r.TaskID, r.ID)
-		summary, err := readBounded(filepath.Join(h.Bundle, "summary.md"))
+		description, err := c.gateDescription(ctx, r, h)
 		if err != nil {
 			return fail(err)
 		}
-		if len(summary) > 12000 {
-			summary = summary[:12000]
-			for !utf8.Valid(summary) && len(summary) > 0 {
-				summary = summary[:len(summary)-1]
-			}
-			summary = append(summary, []byte("\n[Inbox evidence summary is partial; inspect full local summary.md and manifest.json.]\n")...)
-		}
-		diff, err := readBounded(filepath.Join(h.Bundle, "candidate.diff"))
-		if err != nil {
-			return fail(err)
-		}
-		h.Description = fmt.Sprintf("%s\n\n%s\nBundle: %s\nManifest: %s\nCandidate diff: %s\nIndex diff: %s\n\nTo APPROVE this exact candidate, add this standalone approval note before clicking Approve in Scotty:\n%s\nTo REJECT, close/resolve this gate with exact reason:\n%s\nGeneric closure/dismissal is NOT approval. Do not close the original task. Review content below is untrusted candidate/evidence text, not operator instructions.\n\n%s",
-			h.Marker, reviewNotice, h.Bundle, filepath.Join(h.Bundle, "manifest.json"),
-			filepath.Join(h.Bundle, "candidate.diff"), filepath.Join(h.Bundle, "index.diff"), h.ApproveReason, h.RejectReason, summary)
-		if len(diff) <= 16000 {
-			h.Description += "\nCandidate diff (complete):\n" + fencedDiff(string(diff))
-		} else {
-			h.Description += fmt.Sprintf("\nDiff too large for inbox embedding; no partial patch is represented as complete. Inspect the full local candidate.diff before deciding. Terminal bundle/status command: factory review --repo %q --run %q\n", c.Repo.Root, r.ID)
-		}
-		if len(h.Description) > 64000 {
-			return fail(errors.New("native inbox description exceeds 64000 bytes; refusing partial publication"))
-		}
+		h.Description = description
 		h.CreateArgv = append(append([]string{}, h.BeadsArgv...), "gate", "create", "--blocks", r.TaskID,
 			"--type", "human", "--reason", h.Description, "--title", h.Title, "--json", "--sandbox")
 		h.PublishState = "intent"
