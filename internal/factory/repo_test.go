@@ -30,6 +30,9 @@ func TestMainWorktree_ParsesFirstRecordAndRefusesBare(t *testing.T) {
 	if _, err := mainWorktree("worktree /x/proj.git\x00bare\x00\x00"); err == nil || !strings.Contains(err.Error(), "bare") {
 		t.Fatalf("bare repository accepted: %v", err)
 	}
+	if _, err := mainWorktree("worktree /x/proj.git\x00HEAD abc\x00locked\x00bare\x00\x00"); err == nil || !strings.Contains(err.Error(), "bare") {
+		t.Fatalf("bare after other fields accepted: %v", err)
+	}
 	for _, bad := range []string{"", "HEAD abc\x00", "worktree \x00", "worktree relative\x00"} {
 		if got, err := mainWorktree(bad); err == nil {
 			t.Fatalf("malformed porcelain %q accepted as %q", bad, got)
@@ -178,14 +181,15 @@ func TestRun_AcceptsPrivateWorktreesRootFromEarlierRun(t *testing.T) {
 	}
 }
 
-// gitIn runs a fixture git command in dir with hooks and system config disabled.
+// gitIn runs a fixture git command in dir with hooks, system and global config
+// disabled.
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false"}, args...)...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid",
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid",
 		"GIT_COMMITTER_NAME=fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid")
 	b, err := cmd.CombinedOutput()
 	if err != nil {
@@ -249,5 +253,128 @@ func TestRun_SubmoduleWorktreesRootBesideCheckoutOutsideGit(t *testing.T) {
 	linked, err := Discover(t.Context(), linkedPath)
 	if err != nil || linked.Common != repo.Common || linked.Worktrees != repo.Worktrees {
 		t.Fatalf("submodule linked worktree disagrees: main %+v linked %+v %v", repo, linked, err)
+	}
+}
+
+// isolateGitConfig keeps the git commands Discover runs from reading the
+// developer's global and system config.
+func isolateGitConfig(t *testing.T) {
+	t.Setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+	t.Setenv("GIT_CONFIG_NOSYSTEM", "1")
+}
+
+// commitFixture creates dir as a repository with one committed file.
+func commitFixture(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "init", "-q", "--initial-branch=main")
+	if err := os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("original\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "add", "tracked.txt")
+	gitIn(t, dir, "commit", "-q", "-m", "baseline")
+}
+
+// checkWorktreesOutsideGit fails unless a run worktree under repo.Worktrees
+// passes the guard and has no .git component.
+func checkWorktreesOutsideGit(t *testing.T, repo Repo) {
+	t.Helper()
+	if err := checkRunWorktreePath(repo.Common, filepath.Join(repo.Worktrees, "run")); err != nil {
+		t.Fatalf("worktrees root %q rejected: %v", repo.Worktrees, err)
+	}
+	for _, part := range strings.Split(repo.Worktrees, string(filepath.Separator)) {
+		if part == ".git" {
+			t.Fatalf("worktrees root has .git component: %q", repo.Worktrees)
+		}
+	}
+}
+
+func TestDiscover_NestedSubmoduleWorktreesRootBesideCheckout(t *testing.T) {
+	isolateGitConfig(t)
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf := filepath.Join(base, "leaf-origin")
+	mid := filepath.Join(base, "mid-origin")
+	super := filepath.Join(base, "super")
+	commitFixture(t, leaf)
+	commitFixture(t, mid)
+	gitIn(t, mid, "-c", "protocol.file.allow=always", "submodule", "add", "-q", leaf, "leaf")
+	gitIn(t, mid, "commit", "-q", "-m", "add leaf")
+	commitFixture(t, super)
+	gitIn(t, super, "-c", "protocol.file.allow=always", "submodule", "add", "-q", mid, "mid")
+	gitIn(t, super, "-c", "protocol.file.allow=always", "submodule", "update", "-q", "--init", "--recursive")
+	gitIn(t, super, "commit", "-q", "-m", "add mid")
+
+	checkout := filepath.Join(super, "mid", "leaf")
+	repo, err := Discover(t.Context(), checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(super, ".git", "modules", "mid", "modules", "leaf"); repo.Common != want {
+		t.Fatalf("Common = %q, want %q", repo.Common, want)
+	}
+	if want := filepath.Join(super, "mid", "leaf.factory-runs"); repo.Worktrees != want {
+		t.Fatalf("Worktrees = %q, want %q (common %q)", repo.Worktrees, want, repo.Common)
+	}
+	checkWorktreesOutsideGit(t, repo)
+	linkedPath := filepath.Join(base, "leaf-linked")
+	gitIn(t, checkout, "worktree", "add", "-q", "--detach", linkedPath, "HEAD")
+	linked, err := Discover(t.Context(), linkedPath)
+	if err != nil || linked.Common != repo.Common || linked.Worktrees != repo.Worktrees {
+		t.Fatalf("nested submodule linked worktree disagrees: main %+v linked %+v %v", repo, linked, err)
+	}
+}
+
+func TestDiscover_SeparateGitDirWorktreesRootOutsideGit(t *testing.T) {
+	isolateGitConfig(t)
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := filepath.Join(base, "store.git")
+	proj := filepath.Join(base, "proj")
+	if err := os.Mkdir(proj, 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, proj, "init", "-q", "--initial-branch=main", "--separate-git-dir", store)
+	if err := os.WriteFile(filepath.Join(proj, "tracked.txt"), []byte("original\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, proj, "add", "tracked.txt")
+	gitIn(t, proj, "commit", "-q", "-m", "baseline")
+
+	repo, err := Discover(t.Context(), proj)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repo.Root != proj || repo.Common != store {
+		t.Fatalf("Discover = %+v, want root %q common %q", repo, proj, store)
+	}
+	checkWorktreesOutsideGit(t, repo)
+	linkedPath := filepath.Join(base, "proj-linked")
+	gitIn(t, proj, "worktree", "add", "-q", "--detach", linkedPath, "HEAD")
+	linked, err := Discover(t.Context(), linkedPath)
+	if err != nil || linked.Common != repo.Common || linked.Worktrees != repo.Worktrees {
+		t.Fatalf("separate-git-dir linked worktree disagrees: main %+v linked %+v %v", repo, linked, err)
+	}
+	journal, err := Open(t.Context(), repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { journal.Close() })
+	c := Controller{Repo: repo, Store: journal}
+	r, err := c.Run(t.Context(), request())
+	if err != nil || r.State != "awaiting_review" {
+		t.Fatalf("separate-git-dir run failed: %+v %v", r, err)
+	}
+	if want := filepath.Join(repo.Worktrees, r.ID); r.Worktree != want {
+		t.Fatalf("worktree = %q, want %q", r.Worktree, want)
+	}
+	if _, err := os.Stat(filepath.Join(r.Worktree, "tracked.txt")); err != nil {
+		t.Fatalf("separate-git-dir worktree not checked out: %v", err)
 	}
 }

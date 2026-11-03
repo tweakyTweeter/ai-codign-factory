@@ -349,7 +349,7 @@ func setupController(t *testing.T) Controller {
 		cmd := exec.CommandContext(ctx, "git", args...)
 		cmd.Dir = root
 		cmd.Stdin = strings.NewReader(input)
-		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid",
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=fixture", "GIT_AUTHOR_EMAIL=fixture@example.invalid",
 			"GIT_COMMITTER_NAME=fixture", "GIT_COMMITTER_EMAIL=fixture@example.invalid")
 		b, err := cmd.CombinedOutput()
 		if err != nil {

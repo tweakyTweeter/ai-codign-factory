@@ -52,6 +52,10 @@ func Discover(ctx context.Context, path string) (Repo, error) {
 // worktree when the work tree is set by core.worktree (submodules, whose git
 // dir is <super>/.git/modules/<sub>), so in that case core.worktree from the
 // common config is used instead, resolved relative to the common git dir.
+// Only that case consults core.worktree: a per-worktree core.worktree
+// (config.worktree) and an explicit core.worktree in a non-submodule
+// repository whose main worktree git reports directly are not consulted.
+// Requires git >= 2.36 for "worktree list -z" (2.31 for --path-format).
 func mainWorktreePath(ctx context.Context, root, common string) (string, error) {
 	list, err := gitOutput(ctx, root, "worktree", "list", "--porcelain", "-z")
 	if err != nil {

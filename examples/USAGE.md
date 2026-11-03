@@ -2,6 +2,8 @@
 
 Build with `go build -o /tmp/factory ./cmd/factory`. Darwin and Linux are
 supported. Run `/tmp/factory help` or `<command> --help` for flags.
+Git 2.36 or newer is required (`git worktree list --porcelain -z`); older Git
+fails closed with a Git usage error when the repository is discovered.
 
 ```text
 factory init --repo /path/to/repo
