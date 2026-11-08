@@ -196,6 +196,10 @@ func claudeFinal(raw []byte, in LaunchInputs, out *PhaseOutcome) (string, error)
 			if s := bytes.TrimSpace(e.APIErrorStatus); bytes.Equal(s, []byte("429")) || bytes.Equal(s, []byte(`"429"`)) {
 				out.RateLimited = true
 			}
+			if e.Subtype == "error_max_structured_output_retries" {
+				// The model never produced a response matching the role schema.
+				return fail("contract", errors.New("Claude response never matched the required schema"))
+			}
 			if e.Subtype != "success" || e.IsError == nil || *e.IsError || e.Result == nil || strings.TrimSpace(*e.Result) == "" {
 				return fail(unsuccessful(), fmt.Errorf("Claude result unsuccessful (subtype %q)", e.Subtype))
 			}

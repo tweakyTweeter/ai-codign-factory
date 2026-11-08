@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -368,29 +369,42 @@ func TestClaudeArgv_PassesRoleSchemaOnlyWhenSet(t *testing.T) {
 
 func TestRoleSchema_BindsFingerprintAndShapes(t *testing.T) {
 	t.Setenv("FACTORY_PATCH_FINGERPRINT", "fp-123")
-	for _, role := range []string{"qa", "review"} {
-		var s struct {
-			Properties map[string]map[string]any `json:"properties"`
-			Required   []string                  `json:"required"`
-			Additional bool                      `json:"additionalProperties"`
-		}
-		if err := json.Unmarshal([]byte(roleSchema(role)), &s); err != nil {
+	str := map[string]any{"type": "string", "minLength": float64(1)}
+	verdict := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"version":     map[string]any{"const": float64(1)},
+			"verdict":     map[string]any{"enum": []any{"pass", "fail", "inconclusive"}},
+			"summary":     str,
+			"fingerprint": map[string]any{"const": "fp-123"},
+			"findings": map[string]any{"type": "array", "items": map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{"severity": map[string]any{"enum": []any{"info", "warning", "blocking"}}, "summary": str},
+				"required":             []any{"severity", "summary"},
+				"additionalProperties": false,
+			}},
+		},
+		"required":             []any{"version", "verdict", "summary", "fingerprint", "findings"},
+		"additionalProperties": false,
+	}
+	dev := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"version": map[string]any{"const": float64(1)},
+			"status":  map[string]any{"enum": []any{"complete", "blocked", "inconclusive"}},
+			"summary": str,
+		},
+		"required":             []any{"version", "status", "summary"},
+		"additionalProperties": false,
+	}
+	for role, want := range map[string]map[string]any{"qa": verdict, "review": verdict, "dev": dev} {
+		var got map[string]any
+		if err := json.Unmarshal([]byte(roleSchema(role)), &got); err != nil {
 			t.Fatalf("%s schema: %v", role, err)
 		}
-		if s.Properties["fingerprint"]["const"] != "fp-123" {
-			t.Fatalf("%s schema does not pin the fingerprint: %v", role, s.Properties["fingerprint"])
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s schema = %v\nwant %v", role, got, want)
 		}
-		for _, field := range []string{"version", "verdict", "summary", "fingerprint", "findings"} {
-			if !slices.Contains(s.Required, field) {
-				t.Fatalf("%s schema does not require %s", role, field)
-			}
-		}
-		if s.Additional {
-			t.Fatalf("%s schema allows extra fields", role)
-		}
-	}
-	if dev := roleSchema("dev"); !strings.Contains(dev, `"status":{"enum":["complete","blocked","inconclusive"]}`) {
-		t.Fatalf("dev schema: %s", dev)
 	}
 	if roleSchema("producer") != "" {
 		t.Fatal("producer output is free-form and must have no schema")

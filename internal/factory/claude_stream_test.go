@@ -52,6 +52,18 @@ func TestClaudeFinal_SchemaAddsExactlyStructuredOutput(t *testing.T) {
 	}
 }
 
+func TestClaudeFinal_SchemaRetriesExhaustedIsContract(t *testing.T) {
+	raw, in := claudeStreamFixture(t, func(i, r map[string]any) []map[string]any {
+		r["subtype"], r["is_error"] = "error_max_structured_output_retries", true
+		delete(r, "result")
+		return []map[string]any{i, r}
+	})
+	out := &PhaseOutcome{}
+	if _, err := claudeFinal(raw, in, out); err == nil || out.FailureReason != "contract" {
+		t.Fatalf("exhausted schema retries not reported as contract: %+v %v", out, err)
+	}
+}
+
 func TestClaudeFinal_Success(t *testing.T) {
 	raw, in := claudeStreamFixture(t, nil)
 	out := &PhaseOutcome{}
