@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -350,5 +351,62 @@ func TestClaudeTools_SpillRootIsReadOnly(t *testing.T) {
 	}
 	if _, err := (claudeDriver{}).Tools(claudeTestPolicy("qa", "read"), roots); err == nil || !strings.Contains(err.Error(), "unsafe") {
 		t.Fatalf("unsafe spill root accepted: %v", err)
+	}
+}
+
+func TestClaudeArgv_PassesRoleSchemaOnlyWhenSet(t *testing.T) {
+	p := claudeTestPolicy("qa", "read")
+	in := LaunchInputs{Launch: "/l", Inputs: "/l/inputs", ProfilePath: "/l/p.md", Worktree: "/w", Instructions: "x", Schema: `{"type":"object"}`}
+	argv := claudeDriver{}.Argv(p, in)
+	if i := slices.Index(argv, "--json-schema"); i < 0 || argv[i+1] != in.Schema {
+		t.Fatalf("--json-schema missing or wrong: %q", argv)
+	}
+	in.Schema = ""
+	if slices.Contains(claudeDriver{}.Argv(p, in), "--json-schema") {
+		t.Fatal("--json-schema passed without a schema")
+	}
+}
+
+func TestRoleSchema_BindsFingerprintAndShapes(t *testing.T) {
+	t.Setenv("FACTORY_PATCH_FINGERPRINT", "fp-123")
+	str := map[string]any{"type": "string", "minLength": float64(1)}
+	verdict := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"version":     map[string]any{"const": float64(1)},
+			"verdict":     map[string]any{"enum": []any{"pass", "fail", "inconclusive"}},
+			"summary":     str,
+			"fingerprint": map[string]any{"const": "fp-123"},
+			"findings": map[string]any{"type": "array", "items": map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{"severity": map[string]any{"enum": []any{"info", "warning", "blocking"}}, "summary": str},
+				"required":             []any{"severity", "summary"},
+				"additionalProperties": false,
+			}},
+		},
+		"required":             []any{"version", "verdict", "summary", "fingerprint", "findings"},
+		"additionalProperties": false,
+	}
+	dev := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"version": map[string]any{"const": float64(1)},
+			"status":  map[string]any{"enum": []any{"complete", "blocked", "inconclusive"}},
+			"summary": str,
+		},
+		"required":             []any{"version", "status", "summary"},
+		"additionalProperties": false,
+	}
+	for role, want := range map[string]map[string]any{"qa": verdict, "review": verdict, "dev": dev} {
+		var got map[string]any
+		if err := json.Unmarshal([]byte(roleSchema(role)), &got); err != nil {
+			t.Fatalf("%s schema: %v", role, err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%s schema = %v\nwant %v", role, got, want)
+		}
+	}
+	if roleSchema("producer") != "" {
+		t.Fatal("producer output is free-form and must have no schema")
 	}
 }

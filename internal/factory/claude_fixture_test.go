@@ -127,6 +127,10 @@ func claudeFixture() int {
 	if mode == "extra-tool" {
 		tools = append(tools, "Bash")
 	}
+	// Real Claude answers a --json-schema run through this added tool.
+	if slices.Contains(os.Args, "--json-schema") {
+		tools = append(tools, "StructuredOutput")
+	}
 	emit := func(v any) {
 		b, _ := json.Marshal(v)
 		fmt.Println(string(b))
