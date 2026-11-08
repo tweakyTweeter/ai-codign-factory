@@ -69,6 +69,16 @@ func TestClaudeAdapter_PipelinePasses(t *testing.T) {
 		t.Fatalf("claude pipeline did not pass: %+v: %v", r, err)
 	}
 	requireState(t, c, r.ID, "awaiting_review")
+	// The Claude Dev prompt asks for explain and the Dev verdict carries it.
+	devExplained := false
+	for _, e := range r.Evidence {
+		if e.Role == "dev" && e.Verdict != nil {
+			devExplained = e.Verdict.Explain != nil && *e.Verdict.Explain == Explain{WhatChanged: "Adds the worker file.", Why: "The task asked for it.", Risk: "Low."}
+		}
+	}
+	if !devExplained {
+		t.Fatalf("Claude Dev verdict lacks the explain fields: %+v", r.Evidence)
+	}
 	for _, p := range req.Config.Workflow.Phases {
 		output := filepath.Join(r.Dir, "outputs", p.Name)
 		var manifest struct {

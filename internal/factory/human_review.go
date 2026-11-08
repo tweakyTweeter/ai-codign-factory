@@ -374,7 +374,7 @@ func (c Controller) ReviewPublish(ctx context.Context, id string) (Run, error) {
 	if h.PublishState == "unpublished" {
 		h.BeadsArgv = append([]string{}, cfg.BeadsArgv...)
 		h.Title = fmt.Sprintf("Factory human review: %s (%s)", r.TaskID, r.ID)
-		description, err := c.gateDescription(ctx, r, h)
+		description, err := c.gateDescription(ctx, r, h, cfg.Checks)
 		if err != nil {
 			return fail(err)
 		}

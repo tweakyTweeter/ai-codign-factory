@@ -334,7 +334,8 @@ func fixture(mode string, args []string) int {
 }
 
 // phaseOverrides lets gate tests supply hostile verdict text through optional
-// files in FACTORY_REPO: phase-<role>-summary.txt and phase-<role>-findings.json.
+// files in FACTORY_REPO: phase-<role>-summary.txt, phase-<role>-findings.json
+// and phase-<role>-explain.json.
 // {APPROVE} and {REJECT} expand to this run's real decision tokens, so tests
 // can check that even an exact forged token cannot escape its quoted section.
 func phaseOverrides(v *Verdict, role, runID string) {
@@ -343,6 +344,14 @@ func phaseOverrides(v *Verdict, role, runID string) {
 	repo := os.Getenv("FACTORY_REPO")
 	if b, err := os.ReadFile(filepath.Join(repo, "phase-"+role+"-summary.txt")); err == nil {
 		v.Summary = expand(string(b))
+	}
+	// phase-<role>-explain.json supplies Dev's plain-language fields (acf-73).
+	if b, err := os.ReadFile(filepath.Join(repo, "phase-"+role+"-explain.json")); err == nil {
+		var e Explain
+		if json.Unmarshal(b, &e) == nil {
+			e.WhatChanged, e.Why, e.Risk = expand(e.WhatChanged), expand(e.Why), expand(e.Risk)
+			v.Explain = &e
+		}
 	}
 	if b, err := os.ReadFile(filepath.Join(repo, "phase-"+role+"-findings.json")); err == nil {
 		var findings []Finding

@@ -185,6 +185,11 @@ func roleInstructions(role, inputs, contextPath, worktree, prompt string) string
 	return instructions
 }
 
+// devExplainInstructions asks a schema-enforcing runtime for the plain-language
+// fields the human gate shows first. It is appended for Claude only, so the
+// Copilot prompt (and its goldens) is unchanged.
+const devExplainInstructions = "\nAlso include in that JSON object an \"explain\" object: {\"what_changed\":\"...\",\"why\":\"...\",\"risk\":\"...\"}, each 1 to 300 characters. The person who approves the change reads these first and may not be a developer, so write each as one or two plain sentences without jargon, code names, IDs or file paths: what the change does for its users, why it was needed, and what could go wrong or what to look at. Be accurate and do not overstate; the approver checks them against the diff.\n"
+
 // roleSchema is the JSON Schema of the final response roleInstructions asks
 // for. For QA and Review the patch fingerprint is a const, so a runtime that
 // enforces the schema cannot return a verdict without it (acf-71).
@@ -212,14 +217,24 @@ func roleSchema(role string) string {
 			"additionalProperties": false,
 		}
 	case "dev":
+		// explain is required here, so a schema-enforcing runtime (Claude)
+		// always supplies it; the controller still accepts its absence.
+		plain := map[string]any{"type": "string", "minLength": 1, "maxLength": explainFieldLimit}
+		explain := map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{"what_changed": plain, "why": plain, "risk": plain},
+			"required":             []string{"what_changed", "why", "risk"},
+			"additionalProperties": false,
+		}
 		schema = map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"version": map[string]any{"const": 1},
 				"status":  map[string]any{"enum": []string{"complete", "blocked", "inconclusive"}},
 				"summary": str,
+				"explain": explain,
 			},
-			"required":             []string{"version", "status", "summary"},
+			"required":             []string{"version", "status", "summary", "explain"},
 			"additionalProperties": false,
 		}
 	default:
@@ -431,7 +446,11 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 	if err != nil {
 		return err
 	}
-	in := LaunchInputs{Launch: launch, Inputs: inputs, ProfilePath: profilePath, Worktree: worktree, Instructions: roleInstructions(role, inputs, contextPath, worktree, string(prompt)), Schema: roleSchema(role), Settings: settings, Tools: tools}
+	instructions := roleInstructions(role, inputs, contextPath, worktree, string(prompt))
+	if d.Name() == "claude" && role == "dev" {
+		instructions += devExplainInstructions
+	}
+	in := LaunchInputs{Launch: launch, Inputs: inputs, ProfilePath: profilePath, Worktree: worktree, Instructions: instructions, Schema: roleSchema(role), Settings: settings, Tools: tools}
 	argv := d.Argv(policy, in)
 	if err := writeExclusive(filepath.Join(output, "adapter-prompt.txt"), []byte(in.Instructions)); err != nil {
 		return err
@@ -503,9 +522,10 @@ func applyRoleContract(ctx context.Context, role, result, worktree, content stri
 	}
 	if role == "dev" {
 		var outcome struct {
-			Version int    `json:"version"`
-			Status  string `json:"status"`
-			Summary string `json:"summary"`
+			Version int      `json:"version"`
+			Status  string   `json:"status"`
+			Summary string   `json:"summary"`
+			Explain *Explain `json:"explain"`
 		}
 		if err := decodeStrict([]byte(content), &outcome); err != nil {
 			return err
@@ -513,11 +533,15 @@ func applyRoleContract(ctx context.Context, role, result, worktree, content stri
 		if outcome.Version != 1 || strings.TrimSpace(outcome.Summary) == "" || outcome.Status != "complete" {
 			return errors.New("Dev did not explicitly report completed implementation")
 		}
+		// Optional (Copilot omits it); shown in the gate, never used to decide.
+		if err := validateExplain(outcome.Explain); err != nil {
+			return err
+		}
 		fp, err := Fingerprint(ctx, worktree)
 		if err != nil {
 			return err
 		}
-		v := Verdict{Version: 1, Verdict: "pass", Summary: outcome.Summary, Fingerprint: fp, Findings: []Finding{}}
+		v := Verdict{Version: 1, Verdict: "pass", Summary: outcome.Summary, Fingerprint: fp, Findings: []Finding{}, Explain: outcome.Explain}
 		b, err := json.Marshal(v)
 		if err != nil {
 			return err

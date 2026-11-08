@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -28,14 +29,25 @@ const (
 	gatePathLimit        = 200
 	gateDiffLimit        = 16000
 	gateDescriptionLimit = 64000
+	// Dev's plain-language fields hold at most 300 characters (1200 bytes).
+	gateExplainLimit = 4 * explainFieldLimit
+	// A configured check is named by its argv, shortened to this many bytes.
+	gateCheckLimit = 120
+	// Reviewer notes shown above the decision steps; the rest stay under
+	// Technical details so the steps remain on the first screen.
+	gateResultNotes = 3
 )
 
 // gateDescription builds the operator-facing gate text. It is persisted with
 // the publish intent and later compared byte-for-byte with the native gate,
-// so it is built exactly once per request. Trusted controller text comes
-// first; everything written by the task author, an agent or the candidate is
-// quoted after the decision steps.
-func (c Controller) gateDescription(ctx context.Context, r Run, h *HumanReview) (string, error) {
+// so it is built exactly once per request. Plain language comes first (acf-73):
+// the decision, Dev's plain summary, the result, the change counts and the
+// decision steps; run identifiers, full reports and the diff come last under
+// Technical details. AI- and author-written text is always escaped, bounded,
+// defanged and labelled; only the controller's own decision lines are copyable.
+// checks is the sealed run configuration's check list, used only to name each
+// check by what it ran.
+func (c Controller) gateDescription(ctx context.Context, r Run, h *HumanReview, checks []Command) (string, error) {
 	diffPath := filepath.Join(h.Bundle, "candidate.diff")
 	diff, err := readBounded(diffPath)
 	if err != nil {
@@ -48,7 +60,7 @@ func (c Controller) gateDescription(ctx context.Context, r Run, h *HumanReview) 
 	if statErr == nil {
 		changes = withRenames(parseNumstat(numstat), diff)
 	}
-	g := gateView{c: c, r: r, h: h, title: title, task: description, changes: changes, statErr: statErr}
+	g := gateView{c: c, r: r, h: h, title: title, task: description, checks: checks, changes: changes, statErr: statErr}
 	if full := g.render(diff, true); len(full) <= gateDescriptionLimit {
 		return full, nil
 	}
@@ -80,61 +92,125 @@ type gateView struct {
 	r           Run
 	h           *HumanReview
 	title, task string
+	checks      []Command
 	changes     []fileChange
 	statErr     error
 }
 
+// render lays the gate out in the acf-73 order. Nothing above "What to do"
+// names a run, HEAD, fingerprint, marker, path or phase; those, the full
+// reports and the diff are under Technical details.
 func (g gateView) render(diff []byte, embedDiff bool) string {
 	r, h := g.r, g.h
 	var b strings.Builder
 	line := func(format string, args ...any) { fmt.Fprintf(&b, format+"\n", args...) }
+	root := shellQuote(g.c.Repo.Root)
+
+	// 1. Title (task-author text: escaped and bounded).
 	title := inlineUntrusted(g.title, gateTitleLimit)
 	if title == "" {
 		title = "(task title unavailable)"
 	}
-	line("**Factory approval request: %s - %s**", r.TaskID, title)
-	line("")
-	line("> **Action required.** Clicking **Approve** alone does not approve this change. Add the approval note shown under **How to approve or reject**.")
+	line("**Approval needed: %s - %s**", r.TaskID, title)
 
-	totals := groupTotals(g.changes)
-	production := "unknown"
-	if g.statErr == nil {
-		production = "no"
-		if totals["code"].files > 0 {
-			production = "yes"
-		}
-	}
+	// 2. The decision.
+	line("")
+	line("## What you're deciding")
+	line("Whether this AI-made change may be applied to your checkout. Approving does not commit or push anything.")
 
+	// 3. Dev's plain-language summary: AI-written, one escaped line each.
 	line("")
-	line("## Summary")
-	line("")
-	allOK := true
-	for _, e := range r.Evidence {
-		allOK = allOK && e.ExitCode == 0 && e.Error == "" && !e.Truncated
-	}
-	outcome := "Some recorded phases did not succeed; see Context."
-	if allOK {
-		outcome = fmt.Sprintf("All %d recorded phases succeeded and every structured verdict is pass.", len(r.Evidence))
-	}
-	line("The factory finished task `%s` in run `%s`. %s", r.TaskID, r.ID, outcome)
-	for _, e := range r.Evidence {
-		if e.Verdict != nil && (e.Role == "qa" || e.Role == "review") {
-			line("%s (%s) reported findings: %s.", roleName(e.Role), codeSpan(e.Stage), findingCounts(e.Verdict.Findings))
-		}
-	}
-	if g.statErr == nil {
-		line("%s changed (%s). Production code changed: %s.", plural(len(g.changes), "file"), lineCounts(g.changes), production)
+	line("## In plain words")
+	if e := g.explain(); e != nil {
+		line("*Written by the AI developer; check it against the diff.*")
+		line("- **What changed:** %s", inlineUntrusted(e.WhatChanged, gateExplainLimit))
+		line("- **Why:** %s", inlineUntrusted(e.Why, gateExplainLimit))
+		line("- **Risk:** %s", inlineUntrusted(e.Risk, gateExplainLimit))
 	} else {
-		line("File statistics are unavailable; inspect candidate.diff. Production code changed: unknown.")
+		line("The developer gave no plain-language summary. Read the task and the developer's report under **Technical details** below.")
 	}
-	line("What Dev says it did, the task description and every finding are quoted under **Reported details (untrusted)**.")
+
+	// 4. Result: checks by what they ran, reviews in words, reviewer notes.
+	line("")
+	line("## Result")
+	var checks, reviews []string
+	for _, e := range r.Evidence {
+		switch {
+		case e.Role == "check":
+			checks = append(checks, g.checkName(e.Stage)+" "+outcomeWord(e))
+		case (e.Role == "qa" || e.Role == "review") && e.Verdict != nil:
+			reviews = append(reviews, roleName(e.Role)+": "+outcomeWord(e))
+		}
+	}
+	if len(checks) == 0 {
+		line("- Checks: none configured.")
+	} else {
+		line("- Checks: %s.", strings.Join(checks, "; "))
+	}
+	if len(reviews) == 0 {
+		line("- AI reviews: none recorded.")
+	} else {
+		line("- %s.", strings.Join(reviews, ". "))
+	}
+	g.resultNotes(line)
+
+	// 5. Change counts.
+	line("")
+	line("## What changed")
+	if g.statErr != nil {
+		line("File counts are unavailable; see **Technical details** below.")
+	} else {
+		totals := groupTotals(g.changes)
+		line("Files, grouped by their path:")
+		for _, group := range changeGroups {
+			t := totals[group]
+			if t.files == 0 {
+				line("- %s: 0 files", groupLabels[group])
+				continue
+			}
+			line("- %s: %s, +%d -%d", groupLabels[group], plural(t.files, "file"), t.added, t.deleted)
+		}
+	}
+
+	// 6. The decision steps: the only copyable decision lines in the gate.
+	line("")
+	line("## What to do")
+	line("**To approve:** click **Approve**, choose **Add approval note**, and paste this line as the note, on its own line:")
+	line("")
+	line("```")
+	line("%s", h.ApproveReason)
+	line("```")
+	line("")
+	line("Clicking **Approve** without this note is recorded as NOT approved.")
+	line("")
+	line("**To reject:** do not click Approve. Close this gate with exactly this reason, for example with `bd gate resolve <this gate's ID> --reason '<the line below>' --sandbox`:")
+	line("")
+	line("```")
+	line("%s", h.RejectReason)
+	line("```")
+	line("")
+	line("Then tell Claude, or run %s.", codeSpan("factory review-sync --repo "+root+" --run "+r.ID))
+
+	// 7. What happens next.
+	line("")
+	line("## After you approve")
+	line("Running %s then applies this patch to your checkout without committing, reruns the checks and closes the task.", codeSpan("factory integrate --repo "+root+" --run "+r.ID))
+
+	// 8. Everything else.
+	line("")
+	line("## Technical details")
+	line("")
+	line("### This request")
+	line("")
+	line("- Task `%s`, run `%s`, based on HEAD `%s`.", r.TaskID, r.ID, r.Head)
+	line("- Candidate fingerprint `%s`. Approval covers this exact candidate only; any later change to it invalidates the approval.", h.Fingerprint)
+	line("- Approval by itself does not commit, push, merge, integrate or close anything; only the separate `factory integrate` above applies the patch.")
+	line("- %s", reviewNotice)
+	line("- Request marker (how the factory finds this gate): `%s`", h.Marker)
 
 	line("")
-	line("## Context")
+	line("### Phases and checks")
 	line("")
-	line("- Task: `%s`; why it exists: its description is quoted under **Reported details (untrusted)**.", r.TaskID)
-	line("- Run: `%s`, based on HEAD `%s`.", r.ID, r.Head)
-	line("- Phases:")
 	for _, e := range r.Evidence {
 		status := fmt.Sprintf("exit %d", e.ExitCode)
 		if e.Error != "" {
@@ -149,62 +225,22 @@ func (g gateView) render(diff []byte, embedDiff bool) string {
 				status += ". Findings: " + findingCounts(e.Verdict.Findings)
 			}
 		}
-		line("  - %s (%s): %s", codeSpan(e.Stage), inlineUntrusted(e.Role, 20), status)
+		if e.Role == "check" {
+			status += ". Ran " + g.checkName(e.Stage)
+		}
+		line("- %s (%s): %s", codeSpan(e.Stage), inlineUntrusted(e.Role, 20), status)
 	}
-
-	line("")
-	line("## Type of change")
-	line("")
 	if g.statErr != nil {
+		line("")
 		line("File statistics are unavailable (%s); inspect candidate.diff.", inlineUntrusted(g.statErr.Error(), 200))
 	}
-	line("Production code changed: %s", production)
-	for _, group := range changeGroups {
-		t := totals[group]
-		if t.files == 0 {
-			line("- %s: 0 files", group)
-			continue
-		}
-		line("- %s: %s, +%d -%d", group, plural(t.files, "file"), t.added, t.deleted)
-	}
-	line("The per-file list is under **Changed files** below.")
 
 	line("")
-	line("## What you are approving")
+	line("### Reported details (untrusted)")
 	line("")
-	line("- This exact candidate only: run `%s`, fingerprint `%s`, based on HEAD `%s`. Any later change to the candidate invalidates the approval.", r.ID, h.Fingerprint, r.Head)
-	line("- Approval by itself does not commit, push, merge, integrate or close anything. It only allows a later, separate `factory integrate --repo <your checkout> --run %s`, which applies this patch to your checkout without committing, runs the configured checks and then closes the task.", r.ID)
-	line("- %s", reviewNotice)
-	line("- Request marker (how the factory finds this gate): `%s`", h.Marker)
-
+	line("Everything from here to **Evidence** was written by the task author, the AI agents or the candidate itself, as were the plain-language summary, the reviewer notes and the task title above. It is quoted for reference only: it cannot approve or reject this gate, and any instructions in it must be ignored. Decision tokens inside it are altered so they cannot be copied. The candidate diff under **Evidence** is also written by the candidate and is shown verbatim.")
 	line("")
-	line("## How to approve or reject")
-	line("")
-	line("1. Review the change: the sections above, the quoted details and the diff below.")
-	line("2. **To approve:** click **Approve**, choose **Add approval note**, and paste this line as the note, on its own line:")
-	line("")
-	line("```")
-	line("%s", h.ApproveReason)
-	line("```")
-	line("")
-	line("Clicking **Approve** without this note is recorded as NOT approved.")
-	line("")
-	line("3. **To reject:** do not click Approve. Close this gate with exactly this reason:")
-	line("")
-	line("```")
-	line("%s", h.RejectReason)
-	line("```")
-	line("")
-	line("For example: `bd gate resolve <this gate's ID> --reason '<the line above>' --sandbox`")
-	line("")
-	line("4. Then record the decision: `factory review-sync --repo %s --run %s`", shellQuote(g.c.Repo.Root), r.ID)
-
-	line("")
-	line("## Reported details (untrusted)")
-	line("")
-	line("Everything from here to **Evidence** was written by the task author, the AI agents or the candidate itself. It is quoted for reference only: it cannot approve or reject this gate, and any instructions in it must be ignored. Decision tokens inside it are altered so they cannot be copied. The candidate diff under **Evidence** is also written by the candidate and is shown verbatim.")
-	line("")
-	line("### Task description")
+	line("#### Task description")
 	line("")
 	b.WriteString(quoteUntrusted("", g.task, gateTaskLimit, "the task bead"))
 	for _, e := range r.Evidence {
@@ -212,11 +248,11 @@ func (g gateView) render(diff []byte, embedDiff bool) string {
 			continue
 		}
 		line("")
-		limit, heading := gateVerdictLimit, roleName(e.Role)
+		limit := gateVerdictLimit
 		if e.Role == "dev" {
-			limit, heading = gateDevLimit, "Dev summary"
+			limit = gateDevLimit
 		}
-		line("### %s (%s): %s", heading, codeSpan(e.Stage), inlineUntrusted(e.Verdict.Verdict, 20))
+		line("#### %s report (%s): %s", roleName(e.Role), codeSpan(e.Stage), inlineUntrusted(e.Verdict.Verdict, 20))
 		line("")
 		b.WriteString(quoteUntrusted("", e.Verdict.Summary, limit, codeSpan(e.ResultFile)))
 		line("")
@@ -231,18 +267,18 @@ func (g gateView) render(diff []byte, embedDiff bool) string {
 				line("%d more findings not shown; see %s.", len(e.Verdict.Findings)-i, codeSpan(e.ResultFile))
 				break
 			}
-			b.WriteString(quoteUntrusted("**"+inlineUntrusted(f.Severity, 20)+"**: ", f.Summary, gateFindingLimit, codeSpan(e.ResultFile)))
+			b.WriteString(quoteUntrusted("**"+severityWord(f.Severity)+"**: ", f.Summary, gateFindingLimit, codeSpan(e.ResultFile)))
 		}
 	}
 	line("")
-	line("### Changed files")
+	line("#### Changed files")
 	line("")
 	b.WriteString(changedFiles(g.changes, g.statErr))
 
 	line("")
-	line("## Evidence")
+	line("### Evidence")
 	line("")
-	line("- Terminal view: `factory review --repo %s --run %s`", shellQuote(g.c.Repo.Root), r.ID)
+	line("- Terminal view: `factory review --repo %s --run %s`", root, r.ID)
 	line("- Bundle: %s", codeSpan(h.Bundle))
 	line("- Manifest: %s", codeSpan(filepath.Join(h.Bundle, "manifest.json")))
 	line("- Candidate diff: %s", codeSpan(filepath.Join(h.Bundle, "candidate.diff")))
@@ -281,13 +317,131 @@ func groupTotals(changes []fileChange) map[string]groupTotal {
 	return totals
 }
 
-func lineCounts(changes []fileChange) string {
-	added, deleted := 0, 0
-	for _, f := range changes {
-		added += f.Added
-		deleted += f.Deleted
+var groupLabels = map[string]string{"code": "Product code", "tests": "Tests", "docs": "Docs", "config": "Config"}
+
+// explain returns Dev's plain-language fields, if the Dev verdict has them.
+func (g gateView) explain() *Explain {
+	var e *Explain
+	for _, ev := range g.r.Evidence {
+		if ev.Role == "dev" && ev.Verdict != nil {
+			e = ev.Verdict.Explain
+		}
 	}
-	return fmt.Sprintf("+%d -%d", added, deleted)
+	return e
+}
+
+// checkName names a check stage by the argv it ran, from the run's sealed
+// configuration. Absolute paths are shortened to their base name so no local
+// path appears above the decision steps.
+func (g gateView) checkName(stage string) string {
+	n := 0
+	if _, err := fmt.Sscanf(stage, "check-%d", &n); err != nil || n < 1 {
+		return "A check"
+	}
+	if n > len(g.checks) || len(g.checks[n-1].Argv) == 0 {
+		return fmt.Sprintf("Check %d", n)
+	}
+	args := make([]string, len(g.checks[n-1].Argv))
+	for i, a := range g.checks[n-1].Argv {
+		if filepath.IsAbs(a) {
+			a = filepath.Base(a)
+		}
+		args[i] = a
+	}
+	s := strings.Join(args, " ")
+	if len(s) > gateCheckLimit {
+		s = truncateBytes(s, gateCheckLimit) + "..."
+	}
+	return codeSpan(s)
+}
+
+// outcomeWord states a phase or check result in words, never raw text.
+func outcomeWord(e Evidence) string {
+	if e.ExitCode == 0 && e.Error == "" && !e.Truncated && (e.Verdict == nil || e.Verdict.Verdict == "pass") {
+		return "passed"
+	}
+	return "did not pass"
+}
+
+// resultNotes lists the first reviewer findings, most severe first, as
+// escaped single lines labelled as AI-written; the rest stay under Technical
+// details.
+func (g gateView) resultNotes(line func(string, ...any)) {
+	type note struct {
+		role string
+		f    Finding
+	}
+	var notes []note
+	var all []Finding
+	for _, e := range g.r.Evidence {
+		if e.Verdict == nil || (e.Role != "qa" && e.Role != "review") {
+			continue
+		}
+		for _, f := range e.Verdict.Findings {
+			notes = append(notes, note{e.Role, f})
+			all = append(all, f)
+		}
+	}
+	if len(notes) == 0 {
+		line("- Reviewer notes: none.")
+		return
+	}
+	sort.SliceStable(notes, func(i, j int) bool { return severityRank(notes[i].f.Severity) < severityRank(notes[j].f.Severity) })
+	line("- Reviewer notes, written by the AI reviewers (%s):", noteCounts(all))
+	for _, n := range notes[:min(len(notes), gateResultNotes)] {
+		line("  - **%s** (%s): %s", severityWord(n.f.Severity), roleName(n.role), inlineUntrusted(n.f.Summary, gateFindingLimit))
+	}
+	if len(notes) > gateResultNotes {
+		line("  - %d more under **Technical details** below.", len(notes)-gateResultNotes)
+	}
+}
+
+func severityRank(s string) int {
+	switch s {
+	case "blocking":
+		return 0
+	case "warning":
+		return 1
+	case "info":
+		return 2
+	}
+	return 3
+}
+
+// severityWord maps the finding severity enum to a plain word; anything
+// unexpected gets a generic word, never the raw text.
+func severityWord(s string) string {
+	switch s {
+	case "blocking":
+		return "Blocking"
+	case "warning":
+		return "Warning"
+	case "info":
+		return "Note"
+	}
+	return "Other"
+}
+
+// noteCounts counts findings with the plain severity words.
+func noteCounts(findings []Finding) string {
+	counts := map[string]int{}
+	for _, f := range findings {
+		counts[severityWord(f.Severity)]++
+	}
+	var parts []string
+	if n := counts["Blocking"]; n > 0 {
+		parts = append(parts, fmt.Sprintf("%d blocking", n))
+	}
+	if n := counts["Warning"]; n > 0 {
+		parts = append(parts, plural(n, "warning"))
+	}
+	if n := counts["Note"]; n > 0 {
+		parts = append(parts, plural(n, "note"))
+	}
+	if n := counts["Other"]; n > 0 {
+		parts = append(parts, plural(n, "other"))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // changedFiles lists candidate-chosen paths in one inert fenced block.

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"unicode/utf8"
 )
 
 type Finding struct {
@@ -27,6 +28,33 @@ type Verdict struct {
 	Summary     string    `json:"summary"`
 	Fingerprint string    `json:"fingerprint"`
 	Findings    []Finding `json:"findings"`
+	// Explain is Dev's optional plain-language summary for the human gate.
+	// It is AI-written, quoted as such and never used for any decision.
+	Explain *Explain `json:"explain,omitempty"`
+}
+
+// Explain is what the change does, why and its risk, for a non-developer.
+// The Claude Dev schema requires it; Copilot and older runs omit it.
+type Explain struct {
+	WhatChanged string `json:"what_changed"`
+	Why         string `json:"why"`
+	Risk        string `json:"risk"`
+}
+
+const explainFieldLimit = 300 // characters (runes), as in the Dev schema
+
+// validateExplain accepts an absent explain; a present one needs every field
+// to hold 1 to 300 characters.
+func validateExplain(e *Explain) error {
+	if e == nil {
+		return nil
+	}
+	for _, s := range []string{e.WhatChanged, e.Why, e.Risk} {
+		if strings.TrimSpace(s) == "" || utf8.RuneCountInString(s) > explainFieldLimit {
+			return errors.New("explain fields what_changed, why and risk must each hold 1 to 300 characters")
+		}
+	}
+	return nil
 }
 
 func decodeStrict(data []byte, target any) error {
@@ -204,6 +232,9 @@ func readVerdict(path, fingerprint string) (Verdict, error) {
 	}
 	if v.Version != 1 || strings.TrimSpace(v.Summary) == "" || len(v.Summary) > 16384 || v.Findings == nil || len(v.Findings) > 1000 {
 		return v, errors.New("invalid verdict schema/version/summary/findings")
+	}
+	if err := validateExplain(v.Explain); err != nil {
+		return v, err
 	}
 	if v.Fingerprint != fingerprint {
 		return v, errors.New("verdict fingerprint does not match current patch")

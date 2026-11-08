@@ -387,14 +387,21 @@ func TestRoleSchema_BindsFingerprintAndShapes(t *testing.T) {
 		"required":             []any{"version", "verdict", "summary", "fingerprint", "findings"},
 		"additionalProperties": false,
 	}
+	plain := map[string]any{"type": "string", "minLength": float64(1), "maxLength": float64(300)}
 	dev := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
 			"version": map[string]any{"const": float64(1)},
 			"status":  map[string]any{"enum": []any{"complete", "blocked", "inconclusive"}},
 			"summary": str,
+			"explain": map[string]any{
+				"type":                 "object",
+				"properties":           map[string]any{"what_changed": plain, "why": plain, "risk": plain},
+				"required":             []any{"what_changed", "why", "risk"},
+				"additionalProperties": false,
+			},
 		},
-		"required":             []any{"version", "status", "summary"},
+		"required":             []any{"version", "status", "summary", "explain"},
 		"additionalProperties": false,
 	}
 	for role, want := range map[string]map[string]any{"qa": verdict, "review": verdict, "dev": dev} {

@@ -161,6 +161,10 @@ func claudeFixture() int {
 			return 95
 		}
 		content = `{"version":1,"status":"complete","summary":"implemented acceptance"}`
+		// Real Claude follows the Dev schema, which requires explain.
+		if strings.Contains(prompt, devExplainInstructions) {
+			content = `{"version":1,"status":"complete","summary":"implemented acceptance","explain":{"what_changed":"Adds the worker file.","why":"The task asked for it.","risk":"Low."}}`
+		}
 		if mode == "blocked" {
 			content = `{"version":1,"status":"blocked","summary":"missing capability"}`
 		}

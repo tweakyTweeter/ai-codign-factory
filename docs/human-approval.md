@@ -18,7 +18,7 @@ The commands return JSON with the review artifacts and request information.
 Open the gate in Scotty's **Needs You** view; its description is laid out as
 described in [The gate description](#the-gate-description). Click **Approve**,
 choose **Add approval note**, and paste the approval token from the gate's
-**How to approve or reject** section as the note, only after inspecting the
+**What to do** section as the note, only after inspecting the
 candidate and evidence. Clicking **Approve** without that note is recorded as
 not approved. Afterwards:
 
@@ -58,59 +58,104 @@ verified run. Already completed integrations remain historical results.
 `factory review-publish` writes the gate description once, persists it with the
 publish intent, and on every later sync requires the native gate to match it
 byte for byte. The tokens and the decision rules are unchanged; only the
-layout is designed for a human. Sections appear in this order:
+layout is designed for a human. It is plain language first: what you are
+deciding, what the change does, whether it passed, and what to do. Technical
+detail comes last. Sections appear in this order:
 
-1. **Title line**: `Factory approval request: TASK - TITLE`, followed by a
-   short warning that clicking **Approve** alone does not approve the change.
-2. **Summary**: the run, whether every phase succeeded, the QA and Review
-   finding counts, the number of changed files with `+`/`-` line counts, and
-   whether production code changed.
-3. **Context**: task and run IDs, base HEAD, and one line per phase with its
-   exit code, recorded verdict and finding counts.
-4. **Type of change**: totals per group (code, tests, docs, config) and whether
-   production code changed. Groups come from a path heuristic for orientation
-   only: test files and `testdata` are tests; Markdown, `docs/` and README-style
+1. **Title line**: `Approval needed: TASK - TITLE`.
+2. **What you're deciding**: fixed sentences saying the decision is whether
+   this AI-made change may be applied to your checkout, and that approving does
+   not commit or push anything.
+3. **In plain words**: Dev's `explain` fields (what changed, why, risk),
+   labelled *Written by the AI developer; check it against the diff*. If Dev
+   gave none (Copilot, or a run from before acf-73), the section says "The
+   developer gave no plain-language summary" and points to the reports under
+   **Technical details**.
+4. **Result**: each configured check named by what it ran, for example
+   "`go test ./...` passed", then QA and Review in words ("passed"), then
+   up to three reviewer notes, most severe first, with a plain severity word
+   (**Warning**, **Note**) and labelled as written by the AI reviewers. Further
+   notes are counted, with a pointer to **Technical details**. A check's name
+   is its argv from the run's sealed configuration, with absolute paths
+   shortened to their base name and at most 120 bytes shown.
+5. **What changed**: file and `+`/`-` line counts for product code, tests,
+   docs and config. Groups come from a path heuristic for orientation only:
+   test files and `testdata` are tests; Markdown, `docs/` and README-style
    files are docs; JSON/YAML/TOML, module files, build files and dot-paths are
-   config; everything else is code. Counts come from `git apply --numstat` on
-   the bundled `candidate.diff`.
-5. **What you are approving**: this exact candidate (run, fingerprint, base
-   HEAD) and nothing else. Approval does not commit, push, merge, integrate or
-   close anything; it only allows a later, separate `factory integrate`. The
-   request marker is shown here.
-6. **How to approve or reject**: numbered steps, with the approval token and
-   the rejection token each alone in its own code block for copying, the
-   warning that **Approve** without the note is not approval, a `bd gate
-   resolve` example for rejection and the `factory review-sync` command.
-7. **Reported details (untrusted)**: the task description, Dev's summary of
-   what it did, each QA and Review summary, every finding with its severity
-   (at most 15 per phase are quoted; the rest are counted, with a pointer to
-   `result.json`), and the per-file change list.
-8. **Evidence**: the terminal `factory review` command, bundle, manifest,
-   candidate and index diffs, phase logs and results, and the candidate diff
-   itself when it is at most 16,000 bytes.
+   config; everything else is product code. Counts come from
+   `git apply --numstat` on the bundled `candidate.diff`.
+6. **What to do**: to approve, click **Approve**, choose **Add approval
+   note** and paste the approval line; to reject, close the gate with the
+   rejection line (with a `bd gate resolve` example). Each line is alone in its
+   own code block for copying, with the warning that **Approve** without the
+   note is not approval. Then tell Claude, or run the shown
+   `factory review-sync` command.
+7. **After you approve**: one sentence saying that the shown
+   `factory integrate` command then applies the patch to your checkout without
+   committing, reruns the checks and closes the task.
+8. **Technical details**: everything else.
+   - **This request**: task, run ID, base HEAD and candidate fingerprint
+     (approval covers this exact candidate only), the statement that approval
+     does not commit, push, merge, integrate or close anything, the local-review
+     notice and the request marker.
+   - **Phases and checks**: one line per phase and check with its stage name,
+     exit code, recorded verdict, finding counts and, for checks, the command.
+   - **Reported details (untrusted)**: the task description, the full Dev, QA
+     and Review reports, every finding with its severity (at most 15 per phase
+     are quoted; the rest are counted, with a pointer to `result.json`), and the
+     per-file change list.
+   - **Evidence**: the terminal `factory review` command, bundle, manifest,
+     candidate and index diffs, phase logs and results, and, last, the
+     candidate diff itself when it is at most 16,000 bytes.
 
-Everything in sections 1 to 6 is written by the factory, except the task title
-on the title line, which is flattened to one escaped line of at most 100
-bytes. Text written by the task author, the agents or the candidate (task
-description, summaries, findings and file paths) appears only after the
-decision steps, in section 7, and is treated as data:
+Sections 1 to 6 fit in about the first 40 lines, including both complete
+decision lines. No run ID, HEAD, fingerprint, request marker, local path or
+phase name (such as `phase-dev` or `check-01`) appears above **What to do**,
+except inside the approval and rejection lines themselves.
 
-- It is bounded (task description 1,500 bytes, Dev summary 2,500, other
-  summaries 1,200, each finding 400, 50 files, 200 bytes per path); truncation
-  is stated together with the full file to read.
-- Prose is shown as a blockquote with Markdown special characters
-  backslash-escaped and control/format characters removed, so it cannot open
-  a heading, code block, link, image or HTML. File paths are in a fenced block
-  longer than any backtick run they contain.
+The task title, the plain-language summary and the reviewer notes appear above
+the decision steps; everything else written by the task author, the agents or
+the candidate (task description, reports, findings and file paths) appears only
+under **Technical details**. All of it is treated as data:
+
+- It is labelled as written by the AI developer or reviewers, or quoted under
+  **Reported details (untrusted)**.
+- It is bounded (title 100 bytes, each `explain` field 300 characters, task
+  description 1,500 bytes, Dev report 2,500, other reports 1,200, each finding
+  400, 50 files, 200 bytes per path); truncation in the reports is stated
+  together with the full file to read.
+- Above the steps, the title, `explain` fields and reviewer notes are
+  flattened to one escaped line each. Further down, prose is shown as a
+  blockquote. Either way Markdown special characters are backslash-escaped and
+  control/format characters removed, so it cannot open a heading, code block,
+  link, image or HTML. File paths are in a fenced block longer than any
+  backtick run they contain.
 - Strings shaped like decision tokens are rewritten, for example
   `factory-approve(quoted):`, so outside the embedded diff the only copyable
   `factory-approve:`, `factory-reject:` and `factory-review:` strings in a gate
   are the factory's own.
 
-The embedded candidate diff in section 8 stays verbatim inside its fence, so it
-can contain token-shaped text. Such text cannot approve anything: a token is
+### Dev's plain-language summary
+
+Dev's final outcome may carry an optional `explain` object:
+
+```json
+{"version":1,"status":"complete","summary":"...",
+ "explain":{"what_changed":"...","why":"...","risk":"..."}}
+```
+
+Each field must hold 1 to 300 characters; an empty, overlong or unknown field
+fails the Dev phase like any other contract error, and `result.json` is checked
+the same way when it is read back. For Claude the Dev role schema requires
+`explain`, and the Claude Dev prompt asks for it in plain language for a reader
+who is not a developer. Copilot's prompt is unchanged, so its outcome normally
+has no `explain`, which the controller accepts. The fields are shown to the
+human only; the controller never uses them for any decision.
+
+The embedded candidate diff in **Evidence** stays verbatim inside its fence, so
+it can contain token-shaped text. Such text cannot approve anything: a token is
 bound to the candidate's fingerprint, which the candidate cannot know about
-itself. Copy decision tokens only from **How to approve or reject**. The
+itself. Copy decision tokens only from **What to do**. The
 description is never cut: if it would exceed 64,000 bytes, the embedded diff is
 replaced by a pointer to `candidate.diff`, and publication is refused if that
 is still too long. The description never decides anything: only the gate's
