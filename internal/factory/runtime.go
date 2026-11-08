@@ -14,7 +14,35 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// phaseTimeoutEnv carries a phase command's controller timeout to its adapter.
+const phaseTimeoutEnv = "FACTORY_PHASE_TIMEOUT"
+
+// maxAuditMargin caps how much of the controller timeout the adapter keeps
+// for its post-run audit after stopping the runtime.
+const maxAuditMargin = 30 * time.Second
+
+// adapterDeadline returns when a non-Copilot adapter must stop its runtime so
+// that the post-run audit (PostRun, spill cleanup, residue recording and the
+// launch dir removal) completes before the controller's command timeout, which
+// SIGKILLs the adapter and would skip all of it (acf-67). The margin is a fifth
+// of the timeout, at most maxAuditMargin. An unset value means no adapter
+// deadline (direct invocation); a malformed or non-positive one fails closed.
+func adapterDeadline(start time.Time, value string) (time.Time, bool, error) {
+	if value == "" {
+		return time.Time{}, false, nil
+	}
+	timeout, err := time.ParseDuration(value)
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("invalid %s %q: %w", phaseTimeoutEnv, value, err)
+	}
+	if timeout <= 0 {
+		return time.Time{}, false, fmt.Errorf("invalid %s %q: must be positive", phaseTimeoutEnv, value)
+	}
+	return start.Add(timeout - min(maxAuditMargin, timeout/5)), true, nil
+}
 
 // ToolRoots are the directories a driver may scope tool rules to.
 type ToolRoots struct{ Worktree, Inputs, Profile, Spill string }
@@ -246,6 +274,7 @@ func treeManifest(root string) (map[string]string, error) {
 // RunPhase is the supervised phase adapter. expect, when set, restricts the
 // policy runtime (factory copilot passes "copilot"). It never retries.
 func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
+	start := time.Now()
 	// The adapter runs with the candidate worktree as its cwd, so a relative
 	// policy path would resolve inside files Dev can modify. Refuse it before
 	// anything is read.
@@ -282,12 +311,20 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 	if policy.Runtime != "copilot" {
 		out.Runtime = policy.Runtime // outcome evidence and failure_reason for every later failure
 	}
+	// phaseCtx bounds setup and the runtime by the adapter deadline; the
+	// post-run audit uses ctx so it still runs once the deadline has passed.
+	phaseCtx := ctx
 	defer func() {
 		if out.Runtime == "" {
 			return
 		}
 		if err != nil && out.FailureReason == "" {
 			out.FailureReason = "contract"
+			// DeadlineExceeded, not any Err: the deferred cancel has already
+			// run here and would make every failure look like a timeout.
+			if errors.Is(phaseCtx.Err(), context.DeadlineExceeded) {
+				out.FailureReason = "timeout"
+			}
 		}
 		data, mErr := json.MarshalIndent(out, "", "  ")
 		err = errors.Join(err, mErr, writeExclusive(filepath.Join(output, "adapter-outcome.json"), data))
@@ -295,6 +332,19 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 			err = fmt.Errorf("failure_reason=%s: %w", out.FailureReason, err)
 		}
 	}()
+	if policy.Runtime != "copilot" {
+		// Copilot records no outcome and has no post-run audit; it keeps the
+		// controller timeout alone, unchanged.
+		deadline, ok, dErr := adapterDeadline(start, os.Getenv(phaseTimeoutEnv))
+		if dErr != nil {
+			return dErr
+		}
+		if ok {
+			var cancel context.CancelFunc
+			phaseCtx, cancel = context.WithDeadline(ctx, deadline)
+			defer cancel()
+		}
+	}
 	resolvedProfile, err := filepath.EvalSymlinks(policy.SourceProfile)
 	if err != nil {
 		return err
@@ -330,15 +380,15 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 	if err != nil {
 		return err
 	}
-	inputs, err := privateInputs(ctx, launch, contextPath, worktree)
+	inputs, err := privateInputs(phaseCtx, launch, contextPath, worktree)
 	if err != nil {
 		return err
 	}
-	inputSeal, err := artifactDigest(ctx, launch, "inputs")
+	inputSeal, err := artifactDigest(phaseCtx, launch, "inputs")
 	if err != nil {
 		return err
 	}
-	profileSeal, err := artifactDigest(ctx, launch, "profile-snapshot")
+	profileSeal, err := artifactDigest(phaseCtx, launch, "profile-snapshot")
 	if err != nil {
 		return err
 	}
@@ -366,7 +416,7 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 		return fmt.Errorf("failure_reason=policy: %w", err)
 	}
 	env, inherit, dropped := d.Env()
-	version, err := d.Version(ctx, policy, launch, env, inherit)
+	version, err := d.Version(phaseCtx, policy, launch, env, inherit)
 	if err != nil {
 		return err
 	}
@@ -394,10 +444,10 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 		return err
 	}
 	metadata := Run{Dir: output}
-	if err := sealArtifacts(ctx, &metadata, "profile-snapshot", "adapter.json", "adapter-prompt.txt", "adapter-argv.json"); err != nil {
+	if err := sealArtifacts(phaseCtx, &metadata, "profile-snapshot", "adapter.json", "adapter-prompt.txt", "adapter-argv.json"); err != nil {
 		return err
 	}
-	settingsSeal, err := artifactDigest(ctx, launch, settings.SealDir)
+	settingsSeal, err := artifactDigest(phaseCtx, launch, settings.SealDir)
 	if err != nil {
 		return err
 	}
@@ -408,10 +458,13 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 	var stdout, stderr bytes.Buffer
 	capOut := &cappedWriter{dst: &stdout, remaining: outputLimit}
 	diagnostics := &cappedWriter{dst: &stderr, remaining: outputLimit}
-	_, err = executeStreamsEnv(ctx, launch, argv, env, capOut, diagnostics, nil, false, inherit)
-	if err != nil && ctx.Err() != nil && out.Runtime != "" {
+	_, err = executeStreamsEnv(phaseCtx, launch, argv, env, capOut, diagnostics, nil, false, inherit)
+	if err != nil && phaseCtx.Err() != nil && out.Runtime != "" {
 		out.FailureReason = "timeout"
 	}
+	// The audit below and in finishRun deliberately uses ctx, not phaseCtx:
+	// after the adapter deadline it must still run, clean verified spills and
+	// record residue before the controller's own timeout (acf-67).
 	integrity := verifyIntegrity(ctx, metadata)
 	for name, want := range map[string]string{"inputs": inputSeal, "profile-snapshot": profileSeal} {
 		got, checkErr := artifactDigest(ctx, launch, name)

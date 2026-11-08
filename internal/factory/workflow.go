@@ -321,7 +321,10 @@ func (c Controller) workflow(ctx context.Context, run *Run, cfg Config, env []st
 			"FACTORY_PHASE="+p.Name, "FACTORY_ROLE="+p.Role,
 			"FACTORY_OUTPUT_DIR="+output, "FACTORY_RESULT_FILE="+resultPath,
 			"FACTORY_PHASE_CONTEXT_FILE="+phaseContext,
-			"FACTORY_PATCH_FINGERPRINT="+before, "FACTORY_PROFILE="+p.Profile)
+			"FACTORY_PATCH_FINGERPRINT="+before, "FACTORY_PROFILE="+p.Profile,
+			// The adapter stops its runtime before this timeout so its post-run
+			// audit still runs; the controller's SIGKILL would skip it (acf-67).
+			phaseTimeoutEnv+"="+p.Command.Timeout)
 		if err := c.owned(ctx, *run, cfg); err != nil {
 			return err
 		}

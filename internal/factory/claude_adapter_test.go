@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // claudePolicyFile writes a v2 Claude policy whose executable is this test
@@ -201,6 +202,93 @@ func TestClaudeAdapter_SpillIsRecordedAndCleaned(t *testing.T) {
 	}
 	if entries, err := os.ReadDir(projects); err != nil || len(entries) != 0 {
 		t.Fatalf("spill entry not removed: %v: %v", entries, err)
+	}
+}
+
+// A Claude phase that never finishes hits its command timeout (fixtureCommand:
+// 5s). The adapter must stop it at its own, earlier deadline and still audit
+// the reserved projects entry and the private launch dir: verified spills
+// (and the empty memory/ dir of the live occurrence) are cleaned, anything
+// else is kept and recorded as residue (acf-67).
+func TestClaudeAdapter_TimeoutStillAudits(t *testing.T) {
+	spill := "0d8c7e9a-1b2c-4d5e-8f90-a1b2c3d4e5f6/tool-results/toolu_fixture.txt"
+	for _, mode := range []string{"hang-spill", "hang-residue"} {
+		t.Run(mode, func(t *testing.T) {
+			projects := claudeEnvSetup(t)
+			c, req := setupController(t), workflowRequest()
+			useClaudePhase(t, req, "producer", mode)
+			r, err := c.Run(t.Context(), req)
+			if err == nil || r.State == "awaiting_review" || len(r.Evidence) == 0 {
+				t.Fatalf("hanging phase accepted: %+v", r)
+			}
+			last := r.Evidence[len(r.Evidence)-1]
+			if last.Role != "producer" {
+				t.Fatalf("run failed in %s, want producer: %+v", last.Role, r.Evidence)
+			}
+			// Exit code 61 is the agent fixture reporting RunPhase's error: the
+			// adapter exited by itself rather than being SIGKILLed by the controller.
+			log, _ := os.ReadFile(last.Log)
+			if last.ExitCode != 61 || !strings.Contains(string(log), "failure_reason=timeout") {
+				t.Fatalf("adapter did not stop at its own deadline (exit %d): %s", last.ExitCode, log)
+			}
+			var outcome PhaseOutcome
+			b, err := os.ReadFile(filepath.Join(last.OutputDir, "adapter-outcome.json"))
+			if err != nil || json.Unmarshal(b, &outcome) != nil || outcome.Runtime != "claude" || outcome.FailureReason != "timeout" {
+				t.Fatalf("outcome not recorded after timeout: %s: %v", b, err)
+			}
+			var manifest struct {
+				LaunchDir string `json:"launch_dir"`
+			}
+			b, _ = os.ReadFile(filepath.Join(last.OutputDir, "adapter.json"))
+			if json.Unmarshal(b, &manifest) != nil || manifest.LaunchDir == "" {
+				t.Fatalf("manifest: %s", b)
+			}
+			if _, err := os.Stat(manifest.LaunchDir); !os.IsNotExist(err) {
+				t.Fatalf("private launch dir survived the timeout: %v", err)
+			}
+			entries, err := os.ReadDir(projects)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch mode {
+			case "hang-spill":
+				if len(entries) != 0 || len(outcome.Residue) != 0 || !slices.Equal(outcome.SpillFiles, []SpillFile{{Path: spill, Size: 20906}}) {
+					t.Fatalf("spill-only entry not cleaned after timeout: %v: %+v", entries, outcome)
+				}
+			case "hang-residue":
+				if len(entries) != 1 || len(outcome.Residue) != 1 || outcome.Residue[0] != filepath.Join(projects, entries[0].Name()) || len(outcome.SpillFiles) != 0 {
+					t.Fatalf("residue not recorded after timeout: %v: %+v", entries, outcome)
+				}
+				for _, rel := range []string{"memory/MEMORY.md", spill} {
+					if _, err := os.Stat(filepath.Join(outcome.Residue[0], rel)); err != nil {
+						t.Fatalf("residue evidence %s removed: %v", rel, err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAdapterDeadline(t *testing.T) {
+	start := time.Unix(1000, 0)
+	for _, tc := range []struct {
+		value string
+		ok    bool
+		want  time.Duration
+		bad   bool
+	}{
+		{value: ""},
+		{value: "nonsense", bad: true},
+		{value: "0s", bad: true},
+		{value: "-5s", bad: true},
+		{value: "5s", ok: true, want: 4 * time.Second},
+		{value: "5m", ok: true, want: 5*time.Minute - 30*time.Second},
+		{value: "100ms", ok: true, want: 80 * time.Millisecond},
+	} {
+		got, ok, err := adapterDeadline(start, tc.value)
+		if (err != nil) != tc.bad || ok != tc.ok || (ok && got.Sub(start) != tc.want) {
+			t.Fatalf("%q: got %v %v %v", tc.value, got.Sub(start), ok, err)
+		}
 	}
 }
 

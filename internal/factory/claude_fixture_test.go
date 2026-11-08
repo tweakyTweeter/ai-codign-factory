@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 // isClaudeFixtureInvocation recognises the claude driver's argv shape. The env
@@ -96,7 +97,7 @@ func claudeFixture() int {
 		if mode == "residue-file" && !write(filepath.Join(dir, "MEMORY.md"), "leak") {
 			return 94
 		}
-	case "spill", "memory-file":
+	case "spill", "memory-file", "hang-spill", "hang-residue":
 		// Real Claude spills large tool results into the run's projects entry,
 		// which the adapter must have pre-created and granted read-only.
 		home, err := os.UserHomeDir()
@@ -119,7 +120,7 @@ func claudeFixture() int {
 		if !write(filepath.Join(results, "toolu_fixture.txt"), strings.Repeat("x", 20906)) {
 			return 94
 		}
-		if mode == "memory-file" && !write(filepath.Join(entry, "memory", "MEMORY.md"), "leak") {
+		if (mode == "memory-file" || mode == "hang-residue") && !write(filepath.Join(entry, "memory", "MEMORY.md"), "leak") {
 			return 94
 		}
 	}
@@ -138,6 +139,11 @@ func claudeFixture() int {
 	emit(map[string]any{"type": "system", "subtype": "init", "tools": tools, "mcp_servers": []any{}, "skills": []any{},
 		"plugins": []map[string]string{{"name": "agents-md", "source": "cc-plugin-agents-md@builtin"}}, "permissionMode": flagValue(os.Args, "--permission-mode"),
 		"cwd": cwd, "model": "fixture-model", "claude_code_version": "2.1.306", "apiKeySource": "none"})
+	if strings.HasPrefix(mode, "hang-") {
+		// Never finishes: only a timeout ends this run (acf-67).
+		time.Sleep(10 * time.Minute)
+		return 98
+	}
 	content := "Producer plan: implement worker.txt after inspecting acceptance"
 	switch {
 	case strings.Contains(prompt, "You are the dev phase"):

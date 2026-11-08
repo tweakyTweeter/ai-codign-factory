@@ -163,6 +163,11 @@ The phase environment adds:
 * `FACTORY_PHASE_CONTEXT_FILE`: live JSON manifest with task/prompt paths,
   prior phase artifact directories, current run/check evidence and fingerprint
 * `FACTORY_PATCH_FINGERPRINT`: the pre-phase candidate hash
+* `FACTORY_PHASE_TIMEOUT`: the phase command's `timeout`. A non-Copilot runtime
+  adapter (`factory agent`) stops its runtime at the timeout minus an audit
+  margin (a fifth of it, at most 30s) with `failure_reason=timeout`, so its
+  post-run audit still cleans verified spills or records residue before the
+  controller's own timeout kills it. A malformed value fails the phase.
 
 Dev, QA and review commands must write a strict v1 result:
 
