@@ -162,26 +162,33 @@ func readBounded(path string) ([]byte, error) {
 	return b, err
 }
 
-// digestFile returns digest(contents) of a regular file of at most limit bytes.
-func digestFile(path string, limit int64) (string, error) {
+// readLimited reads a regular file of at most limit bytes. readBounded is the
+// 1 MiB form used for evidence the controller parses.
+func readLimited(path string, limit int64) ([]byte, error) {
 	info, err := os.Lstat(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if !info.Mode().IsRegular() || info.Size() > limit {
-		return "", fmt.Errorf("evidence must be a regular file of at most %d MiB", limit>>20)
+		return nil, fmt.Errorf("evidence must be a regular file of at most %d MiB", limit>>20)
 	}
 	f, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer f.Close()
 	b, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err == nil && int64(len(b)) > limit {
+		err = fmt.Errorf("evidence exceeds %d MiB", limit>>20)
+	}
+	return b, err
+}
+
+// digestFile returns digest(contents) of a regular file of at most limit bytes.
+func digestFile(path string, limit int64) (string, error) {
+	b, err := readLimited(path, limit)
 	if err != nil {
 		return "", err
-	}
-	if int64(len(b)) > limit {
-		return "", fmt.Errorf("evidence exceeds %d MiB", limit>>20)
 	}
 	return digest(b), nil
 }

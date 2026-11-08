@@ -151,6 +151,8 @@ func claudeFixture() int {
 		for range 40 {
 			emit(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{{"type": "text", "text": chunk}}}})
 		}
+		// One event line alone over 1 MiB, as a large tool result can be.
+		emit(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{{"type": "text", "text": strings.Repeat("z", 3<<19)}}}})
 	}
 	content := "Producer plan: implement worker.txt after inspecting acceptance"
 	switch {
