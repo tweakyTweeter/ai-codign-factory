@@ -16,6 +16,11 @@ import (
 
 const outputLimit = 1 << 20
 
+// runtimeStreamLimit caps a phase runtime's own event stream (stdout). Claude's
+// stream-json echoes every tool call and result, so a large Dev session
+// passes 1 MiB long before its final result event (acf-73 run 3aeced99).
+const runtimeStreamLimit = 16 << 20
+
 var ErrTeardown = errors.New("process cleanup could not be confirmed")
 
 // cappedWriter drains all output but stores at most limit bytes. It is safe for

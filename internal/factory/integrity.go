@@ -67,11 +67,12 @@ func artifactDigest(ctx context.Context, root, name string) (string, error) {
 			if total > 128<<20 {
 				return errors.New("evidence exceeds 128 MiB")
 			}
-			b, err := readBounded(path)
+			// Sealed evidence includes a runtime's raw event stream, which may
+			// exceed the 1 MiB that parsed evidence is held to.
+			content, err = digestFile(path, runtimeStreamLimit)
 			if err != nil {
 				return err
 			}
-			content = digest(b)
 		}
 		records = append(records, fmt.Sprintf("%d:%s:%s:%s", len(rel), rel, info.Mode(), content))
 		return nil

@@ -162,6 +162,30 @@ func readBounded(path string) ([]byte, error) {
 	return b, err
 }
 
+// digestFile returns digest(contents) of a regular file of at most limit bytes.
+func digestFile(path string, limit int64) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Size() > limit {
+		return "", fmt.Errorf("evidence must be a regular file of at most %d MiB", limit>>20)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, limit+1))
+	if err != nil {
+		return "", err
+	}
+	if int64(len(b)) > limit {
+		return "", fmt.Errorf("evidence exceeds %d MiB", limit>>20)
+	}
+	return digest(b), nil
+}
+
 func readVerdict(path, fingerprint string) (Verdict, error) {
 	var v Verdict
 	b, err := readBounded(path)

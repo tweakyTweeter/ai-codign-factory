@@ -136,7 +136,7 @@ func TestIntegrity_LegacyUnsealedRunCannotAcquireApproval(t *testing.T) {
 
 func TestIntegrity_RejectsUnsafeAndOversizedEvidence(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "large"), make([]byte, outputLimit+1), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "large"), make([]byte, runtimeStreamLimit+1), 0600); err != nil {
 		t.Fatal(err)
 	}
 	for _, path := range []string{".", "..", "../outside", "/absolute", "a/../b", "large"} {
