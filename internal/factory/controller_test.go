@@ -46,6 +46,8 @@ func TestFixture(t *testing.T) {
 
 func fixture(mode string, args []string) int {
 	switch mode {
+	case "claude-launch-killed":
+		return claudeLaunchKilledFixture()
 	case "adapter-tree":
 		cmd := fixtureCommand("tree")
 		_, err := executeGroup(context.Background(), os.Getenv("FACTORY_WORKTREE"), cmd.Argv, os.Environ(), os.Stdout, nil, false)

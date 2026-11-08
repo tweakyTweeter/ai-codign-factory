@@ -229,7 +229,14 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		}
 		return encode(runs)
 	case "reconcile":
-		runs, err := c.Reconcile(ctx)
+		runs, unowned, err := c.ReconcileSweep(ctx)
+		if len(unowned) > 0 {
+			// stdout keeps its shape; leftovers no run here owns are only reported.
+			notice, mErr := json.Marshal(map[string]any{"notice": "Claude launch leftovers not owned by any run in this journal; left untouched", "unowned_launch_residue": unowned})
+			if mErr == nil {
+				fmt.Fprintln(stderr, string(notice))
+			}
+		}
 		if err != nil {
 			return err
 		}

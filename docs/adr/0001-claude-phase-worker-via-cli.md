@@ -59,6 +59,12 @@ There were three ways to drive Claude:
   projects entry is a rule root, a `HOME` or `CLAUDE_CONFIG_DIR` path containing whitespace, glob metacharacters,
   a backslash or other characters the rule-root validation refuses makes every Claude phase fail with
   `failure_reason=policy`.
+- A phase killed before that audit (for example a SIGKILLed adapter) leaves its `$TMPDIR/factory-claude-launch-*`
+  dir and projects entries behind. `factory reconcile` finds them, identifies the owning run from the launch dir's
+  sealed `inputs/outputs/*/context.json`, records them on that run as `launch_residue`, and applies the same
+  `os.Root` audit: spills only in the exact reserved entry, otherwise empty directories only; anything else is kept.
+  A `needs_attention` run's leftovers are recorded only, and swept by an acknowledged `factory release`. Leftovers
+  of runs not in this journal are reported on stderr and never touched (`acf-72`).
 - Usage-limit failures are classified but never retried by the adapter.
 - `Read` stays limited to the phase's paths, which is stronger than Copilot's `view`. Copilot's own environment
   hardening is tracked separately (`acf-35`).

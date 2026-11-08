@@ -54,6 +54,37 @@ type Run struct {
 	Detail          string       `json:"detail,omitempty"`
 	Evidence        []Evidence   `json:"evidence"`
 	CancelRequested bool         `json:"cancel_requested"`
+
+	// LaunchResidue records Claude launch leftovers the reconcile/release
+	// sweep found for this run (acf-72). Absent for runs without any.
+	LaunchResidue []LaunchResidue `json:"launch_residue,omitempty"`
+}
+
+// SaveLaunchResidue journals swept launch leftovers on a run without changing
+// its state, active flag or cancellation. The caller holds the controller lock.
+func (s *Store) SaveLaunchResidue(ctx context.Context, r *Run, detail string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var requested bool
+	if err := tx.QueryRowContext(ctx, "SELECT cancel_requested FROM runs WHERE id=?", r.ID).Scan(&requested); err != nil {
+		return err
+	}
+	r.CancelRequested = requested
+	data, err := json.Marshal(r)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE runs SET data=? WHERE id=?", data, r.ID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO events(run_id,state,detail,at) VALUES(?,?,?,?)",
+		r.ID, "launch_residue", detail, timestamp()); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SaveHumanReview journals the bridge independently of run lifecycle/release.

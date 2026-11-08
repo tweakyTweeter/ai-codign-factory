@@ -408,23 +408,71 @@ func (c Controller) monitor(ctx context.Context, cancel context.CancelCauseFunc,
 // Reconcile only runs with the common-dir lock. No PID is ever signalled,
 // no work is relaunched, and incomplete worktrees/claims are retained.
 func (c Controller) Reconcile(ctx context.Context) ([]Run, error) {
+	runs, _, err := c.ReconcileSweep(ctx)
+	return runs, err
+}
+
+// ReconcileSweep is Reconcile plus the Claude launch sweep (acf-72): with the
+// lock held no controller of this journal is running, so leftovers owned by a
+// run in a stable state are recorded on it and verified spills and empty
+// directories removed. A needs_attention run may still have live descendants,
+// so its leftovers are recorded only, until an acknowledged Release. Leftovers
+// of runs not in this journal are returned, untouched, as unowned.
+func (c Controller) ReconcileSweep(ctx context.Context) ([]Run, []UnownedLaunch, error) {
 	lock, err := c.Repo.Lock()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer lock.Close()
 	runs, err := c.Store.List(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for i := range runs {
 		if !stable(runs[i].State) {
 			if err := c.save(&runs[i], "needs_attention", "controller lock was free but run was incomplete; possible orphan/claim; no PID killed and no relaunch", false); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 	}
-	return runs, nil
+	byID := make(map[string]*Run, len(runs))
+	for i := range runs {
+		byID[runs[i].ID] = &runs[i]
+	}
+	unowned, err := c.sweepLaunches(byID, func(id string) sweepMode {
+		r, ok := byID[id]
+		switch {
+		case !ok:
+			return sweepUnowned
+		case !stable(r.State) || r.State == "needs_attention":
+			return sweepRecord
+		default:
+			return sweepClean
+		}
+	})
+	return runs, unowned, err
+}
+
+// sweepLaunches runs the Claude launch sweep and journals what it found on
+// each owning run. The caller holds the controller lock.
+func (c Controller) sweepLaunches(byID map[string]*Run, mode func(string) sweepMode) ([]UnownedLaunch, error) {
+	found, unowned, err := sweepClaudeLaunches(mode)
+	if err != nil {
+		return unowned, fmt.Errorf("sweep Claude launch leftovers: %w", err)
+	}
+	var errs []error
+	for id, leftovers := range found {
+		r := byID[id]
+		merged, changed := mergeLaunchResidue(r.LaunchResidue, leftovers)
+		if !changed {
+			continue
+		}
+		r.LaunchResidue = merged
+		ctx, cancel := durableContext()
+		errs = append(errs, c.Store.SaveLaunchResidue(ctx, r, launchResidueDetail(leftovers)))
+		cancel()
+	}
+	return unowned, errors.Join(errs...)
 }
 
 func (c Controller) Release(ctx context.Context, id, reason string, ackOrphan bool) (Run, error) {
@@ -449,6 +497,20 @@ func (c Controller) Release(ctx context.Context, id, reason string, ackOrphan bo
 	if reason == "" {
 		return r, errors.New("release requires a nonempty reason")
 	}
-	err = c.save(&r, "released", "human acknowledgement (NOT integration): "+reason, false)
+	if err = c.save(&r, "released", "human acknowledgement (NOT integration): "+reason, false); err != nil {
+		return r, err
+	}
+	// The human has acknowledged the run (and, for a possible orphan, stopped
+	// its descendants), so its own Claude launch leftovers may now be swept.
+	// Other runs' leftovers are left to reconcile.
+	_, err = c.sweepLaunches(map[string]*Run{r.ID: &r}, func(owner string) sweepMode {
+		if owner == r.ID {
+			return sweepClean
+		}
+		return sweepSkip
+	})
+	if err != nil {
+		err = fmt.Errorf("run released, but its launch sweep failed: %w", err)
+	}
 	return r, err
 }
