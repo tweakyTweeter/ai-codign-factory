@@ -144,6 +144,16 @@ func claudeFixture() int {
 		time.Sleep(10 * time.Minute)
 		return 98
 	}
+	if mode == "big-stream" {
+		// Real Claude echoes every tool call; a large Dev session's stream
+		// passes 1 MiB well before its result event (acf-73 run 3aeced99).
+		chunk := strings.Repeat("y", 64<<10)
+		for range 40 {
+			emit(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{{"type": "text", "text": chunk}}}})
+		}
+		// One event line alone over 1 MiB, as a large tool result can be.
+		emit(map[string]any{"type": "assistant", "message": map[string]any{"content": []map[string]any{{"type": "text", "text": strings.Repeat("z", 3<<19)}}}})
+	}
 	content := "Producer plan: implement worker.txt after inspecting acceptance"
 	switch {
 	case strings.Contains(prompt, "You are the dev phase"):

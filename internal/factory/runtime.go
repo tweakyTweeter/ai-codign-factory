@@ -456,7 +456,7 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 		return err
 	}
 	var stdout, stderr bytes.Buffer
-	capOut := &cappedWriter{dst: &stdout, remaining: outputLimit}
+	capOut := &cappedWriter{dst: &stdout, remaining: runtimeStreamLimit}
 	diagnostics := &cappedWriter{dst: &stderr, remaining: outputLimit}
 	_, err = executeStreamsEnv(phaseCtx, launch, argv, env, capOut, diagnostics, nil, false, inherit)
 	if err != nil && phaseCtx.Err() != nil && out.Runtime != "" {

@@ -149,7 +149,7 @@ func claudeFinal(raw []byte, in LaunchInputs, out *PhaseOutcome) (string, error)
 		return "stream_invalid"
 	}
 	scanner := bufio.NewScanner(bytes.NewReader(raw))
-	scanner.Buffer(make([]byte, 4096), outputLimit)
+	scanner.Buffer(make([]byte, 4096), runtimeStreamLimit)
 	seenInit, done, content := false, false, ""
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())

@@ -62,7 +62,14 @@ func privateInputs(ctx context.Context, launch, contextPath, worktree string) (s
 			if entry.IsDir() {
 				return os.MkdirAll(dest, 0700)
 			}
-			b, err := readBounded(path)
+			// Parsed JSON evidence keeps the 1 MiB limit; other sealed files,
+			// such as a runtime's raw event stream, may be up to
+			// runtimeStreamLimit, the size they were sealed at.
+			limit := int64(runtimeStreamLimit)
+			if filepath.Ext(path) == ".json" {
+				limit = outputLimit
+			}
+			b, err := readLimited(path, limit)
 			if err != nil {
 				return err
 			}
@@ -76,7 +83,7 @@ func privateInputs(ctx context.Context, launch, contextPath, worktree string) (s
 				return err
 			}
 			// Directory seals and individual context seals overlap.
-			if existing, err := readBounded(dest); err == nil {
+			if existing, err := readLimited(dest, limit); err == nil {
 				if !bytes.Equal(existing, b) {
 					return errors.New("inconsistent private evidence copy")
 				}

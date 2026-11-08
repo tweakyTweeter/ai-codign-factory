@@ -205,6 +205,28 @@ func TestClaudeAdapter_SpillIsRecordedAndCleaned(t *testing.T) {
 	}
 }
 
+// A Claude event stream larger than the 1 MiB general output cap (about 4 MiB
+// before the result, one line alone over 1 MiB) still reaches its result
+// event, and later phases can copy it into their private inputs (acf-73 run
+// 3aeced99).
+func TestClaudeAdapter_LargeStreamReachesResult(t *testing.T) {
+	claudeEnvSetup(t)
+	c, req := setupController(t), workflowRequest()
+	useClaudePhase(t, req, "dev", "big-stream")
+	// QA and Review run through the adapter too, so their private inputs
+	// copy Dev's large sealed stream.
+	useClaudePhase(t, req, "qa", "")
+	useClaudePhase(t, req, "review", "")
+	r, err := c.Run(t.Context(), req)
+	if err != nil || r.State != "awaiting_review" {
+		t.Fatalf("large stream run failed: %+v: %v", r, err)
+	}
+	info, err := os.Stat(filepath.Join(r.Dir, "outputs", "dev", "claude.jsonl"))
+	if err != nil || info.Size() <= outputLimit {
+		t.Fatalf("stream not larger than the general cap, test proves nothing: %v %v", info, err)
+	}
+}
+
 // A Claude phase that never finishes hits its command timeout (fixtureCommand:
 // 5s). The adapter must stop it at its own, earlier deadline and still audit
 // the reserved projects entry and the private launch dir: verified spills

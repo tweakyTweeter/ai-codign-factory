@@ -271,7 +271,7 @@ func TestClaudeFinal_RateLimitAndStreamEdges(t *testing.T) {
 	for name, raw := range map[string][]byte{
 		"empty":         nil,
 		"blank lines":   []byte("\n  \n"),
-		"oversize line": append(bytes.Repeat([]byte("x"), outputLimit+1), '\n'),
+		"oversize line": append(bytes.Repeat([]byte("x"), runtimeStreamLimit+1), '\n'),
 	} {
 		out := &PhaseOutcome{}
 		if _, err := claudeFinal(raw, LaunchInputs{}, out); err == nil || out.FailureReason != "stream_invalid" {
