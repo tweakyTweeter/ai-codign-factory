@@ -12,7 +12,7 @@ import (
 func claudeStreamFixture(t *testing.T, edit func(init, result map[string]any) []map[string]any) ([]byte, LaunchInputs) {
 	t.Helper()
 	in := LaunchInputs{Launch: "/private/l", Tools: DriverTools{Available: []string{"Read", "Grep", "Glob"}}}
-	init := map[string]any{"type": "system", "subtype": "init", "tools": []string{"Glob", "Read", "Grep"}, "mcp_servers": []any{}, "skills": []any{}, "plugins": []map[string]string{{"source": "cc-plugin-agents-md@builtin"}, {"source": "cc-plugin-telemetry@builtin"}}, "permissionMode": "dontAsk", "cwd": "/private/l", "model": "claude-x", "claude_code_version": "2.1.306", "apiKeySource": "none"}
+	init := map[string]any{"type": "system", "subtype": "init", "tools": []string{"Glob", "Read", "Grep"}, "mcp_servers": []any{}, "skills": []any{}, "plugins": []map[string]string{{"source": "cc-plugin-agents-md@builtin"}, {"source": "cc-plugin-telemetry@builtin"}, {"source": "cc-plugin-privacy@builtin"}}, "permissionMode": "dontAsk", "cwd": "/private/l", "model": "claude-x", "claude_code_version": "2.1.306", "apiKeySource": "none"}
 	result := map[string]any{"type": "result", "subtype": "success", "is_error": false, "result": "done", "permission_denials": []any{}}
 	events := []map[string]any{init, {"type": "assistant"}, {"type": "rate_limit_event", "rate_limit_info": map[string]any{"status": "allowed"}}, result}
 	if edit != nil {
@@ -53,6 +53,10 @@ func TestClaudeFinal_FailsClosed(t *testing.T) {
 		"skill": {"isolation_mismatch", func(i, r map[string]any) []map[string]any { i["skills"] = []any{"tdd"}; return []map[string]any{i, r} }},
 		"user plugin": {"isolation_mismatch", func(i, r map[string]any) []map[string]any {
 			i["plugins"] = []map[string]string{{"source": "beads@market"}}
+			return []map[string]any{i, r}
+		}},
+		"unreviewed builtin plugin": {"isolation_mismatch", func(i, r map[string]any) []map[string]any {
+			i["plugins"] = []map[string]string{{"source": "cc-plugin-sec-default@builtin"}}
 			return []map[string]any{i, r}
 		}},
 		"permission mode": {"isolation_mismatch", func(i, r map[string]any) []map[string]any {

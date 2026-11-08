@@ -16,6 +16,10 @@ var claudeBuiltinPlugins = map[string]bool{
 	"cc-plugin-agents-md@builtin":        true,
 	"cc-plugin-telemetry@builtin":        true,
 	"cc-plugin-plugin-authoring@builtin": true,
+	// Since 2.1.319. Reviewed 2026-11-07: only a tool.check hook that turns
+	// allow into ask (denied under dontAsk) when a shell or web call contains
+	// the signed-in account's email; it adds no tools, skills or prompt text.
+	"cc-plugin-privacy@builtin": true,
 }
 
 type claudeEvent struct {
