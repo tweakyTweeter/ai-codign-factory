@@ -27,6 +27,31 @@ func claudeStreamFixture(t *testing.T, edit func(init, result map[string]any) []
 	return []byte(b.String()), in
 }
 
+func TestClaudeFinal_SchemaAddsExactlyStructuredOutput(t *testing.T) {
+	withTool := func(i, r map[string]any) []map[string]any {
+		i["tools"] = []string{"Glob", "Read", "Grep", "StructuredOutput"}
+		return []map[string]any{i, r}
+	}
+	raw, in := claudeStreamFixture(t, withTool)
+	in.Schema = `{"type":"object"}`
+	if _, err := claudeFinal(raw, in, &PhaseOutcome{}); err != nil {
+		t.Fatalf("schema run with StructuredOutput rejected: %v", err)
+	}
+	// Without a schema the extra tool is an isolation mismatch.
+	in.Schema = ""
+	out := &PhaseOutcome{}
+	if _, err := claudeFinal(raw, in, out); err == nil || out.FailureReason != "isolation_mismatch" {
+		t.Fatalf("StructuredOutput without a schema accepted: %+v %v", out, err)
+	}
+	// With a schema, a missing StructuredOutput is also a mismatch.
+	raw, in = claudeStreamFixture(t, nil)
+	in.Schema = `{"type":"object"}`
+	out = &PhaseOutcome{}
+	if _, err := claudeFinal(raw, in, out); err == nil || out.FailureReason != "isolation_mismatch" {
+		t.Fatalf("schema run without StructuredOutput accepted: %+v %v", out, err)
+	}
+}
+
 func TestClaudeFinal_Success(t *testing.T) {
 	raw, in := claudeStreamFixture(t, nil)
 	out := &PhaseOutcome{}

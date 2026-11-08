@@ -352,3 +352,47 @@ func TestClaudeTools_SpillRootIsReadOnly(t *testing.T) {
 		t.Fatalf("unsafe spill root accepted: %v", err)
 	}
 }
+
+func TestClaudeArgv_PassesRoleSchemaOnlyWhenSet(t *testing.T) {
+	p := claudeTestPolicy("qa", "read")
+	in := LaunchInputs{Launch: "/l", Inputs: "/l/inputs", ProfilePath: "/l/p.md", Worktree: "/w", Instructions: "x", Schema: `{"type":"object"}`}
+	argv := claudeDriver{}.Argv(p, in)
+	if i := slices.Index(argv, "--json-schema"); i < 0 || argv[i+1] != in.Schema {
+		t.Fatalf("--json-schema missing or wrong: %q", argv)
+	}
+	in.Schema = ""
+	if slices.Contains(claudeDriver{}.Argv(p, in), "--json-schema") {
+		t.Fatal("--json-schema passed without a schema")
+	}
+}
+
+func TestRoleSchema_BindsFingerprintAndShapes(t *testing.T) {
+	t.Setenv("FACTORY_PATCH_FINGERPRINT", "fp-123")
+	for _, role := range []string{"qa", "review"} {
+		var s struct {
+			Properties map[string]map[string]any `json:"properties"`
+			Required   []string                  `json:"required"`
+			Additional bool                      `json:"additionalProperties"`
+		}
+		if err := json.Unmarshal([]byte(roleSchema(role)), &s); err != nil {
+			t.Fatalf("%s schema: %v", role, err)
+		}
+		if s.Properties["fingerprint"]["const"] != "fp-123" {
+			t.Fatalf("%s schema does not pin the fingerprint: %v", role, s.Properties["fingerprint"])
+		}
+		for _, field := range []string{"version", "verdict", "summary", "fingerprint", "findings"} {
+			if !slices.Contains(s.Required, field) {
+				t.Fatalf("%s schema does not require %s", role, field)
+			}
+		}
+		if s.Additional {
+			t.Fatalf("%s schema allows extra fields", role)
+		}
+	}
+	if dev := roleSchema("dev"); !strings.Contains(dev, `"status":{"enum":["complete","blocked","inconclusive"]}`) {
+		t.Fatalf("dev schema: %s", dev)
+	}
+	if roleSchema("producer") != "" {
+		t.Fatal("producer output is free-form and must have no schema")
+	}
+}

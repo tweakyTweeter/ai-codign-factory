@@ -217,6 +217,9 @@ func (claudeDriver) Argv(p PhasePolicy, in LaunchInputs) []string {
 	if p.Model != "" {
 		argv = append(argv, "--model", p.Model)
 	}
+	if in.Schema != "" {
+		argv = append(argv, "--json-schema", in.Schema)
+	}
 	return append(argv, "--add-dir", in.Worktree, "--add-dir", in.Inputs)
 }
 

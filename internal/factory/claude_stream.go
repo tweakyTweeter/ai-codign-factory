@@ -71,6 +71,10 @@ func checkClaudeInit(e claudeEvent, in LaunchInputs) error {
 		}
 	}
 	want := slices.Clone(in.Tools.Available)
+	if in.Schema != "" {
+		// --json-schema adds exactly this tool; the model answers through it.
+		want = append(want, "StructuredOutput")
+	}
 	slices.Sort(tools)
 	slices.Sort(want)
 	if !slices.Equal(tools, want) {

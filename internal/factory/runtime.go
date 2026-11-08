@@ -32,8 +32,12 @@ type LaunchSettings struct{ SealDir, File, Content string }
 // LaunchInputs is everything a driver needs to build the child command line.
 type LaunchInputs struct {
 	Launch, Inputs, ProfilePath, Worktree, Instructions string
-	Settings                                            LaunchSettings
-	Tools                                               DriverTools
+	// Schema is the JSON Schema of the final response the instructions ask
+	// for, or "" for free-form roles. A driver that can make the runtime
+	// enforce it does; the controller still validates the response itself.
+	Schema   string
+	Settings LaunchSettings
+	Tools    DriverTools
 }
 
 // ManifestBase holds the runtime-independent facts sealed into adapter.json.
@@ -151,6 +155,53 @@ func roleInstructions(role, inputs, contextPath, worktree, prompt string) string
 		instructions += "\nReturn a concise final summary of your plan or implementation and any limitations.\n"
 	}
 	return instructions
+}
+
+// roleSchema is the JSON Schema of the final response roleInstructions asks
+// for. For QA and Review the patch fingerprint is a const, so a runtime that
+// enforces the schema cannot return a verdict without it (acf-71).
+func roleSchema(role string) string {
+	str := map[string]any{"type": "string", "minLength": 1}
+	var schema map[string]any
+	switch role {
+	case "qa", "review":
+		finding := map[string]any{
+			"type":                 "object",
+			"properties":           map[string]any{"severity": map[string]any{"enum": []string{"info", "warning", "blocking"}}, "summary": str},
+			"required":             []string{"severity", "summary"},
+			"additionalProperties": false,
+		}
+		schema = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"version":     map[string]any{"const": 1},
+				"verdict":     map[string]any{"enum": []string{"pass", "fail", "inconclusive"}},
+				"summary":     str,
+				"fingerprint": map[string]any{"const": os.Getenv("FACTORY_PATCH_FINGERPRINT")},
+				"findings":    map[string]any{"type": "array", "items": finding},
+			},
+			"required":             []string{"version", "verdict", "summary", "fingerprint", "findings"},
+			"additionalProperties": false,
+		}
+	case "dev":
+		schema = map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"version": map[string]any{"const": 1},
+				"status":  map[string]any{"enum": []string{"complete", "blocked", "inconclusive"}},
+				"summary": str,
+			},
+			"required":             []string{"version", "status", "summary"},
+			"additionalProperties": false,
+		}
+	default:
+		return ""
+	}
+	b, err := json.Marshal(schema)
+	if err != nil {
+		panic(err) // static shape; cannot fail
+	}
+	return string(b)
 }
 
 // scopeRoots returns path and, when different, its symlink-resolved form so a
@@ -324,7 +375,7 @@ func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
 	if err != nil {
 		return err
 	}
-	in := LaunchInputs{Launch: launch, Inputs: inputs, ProfilePath: profilePath, Worktree: worktree, Instructions: roleInstructions(role, inputs, contextPath, worktree, string(prompt)), Settings: settings, Tools: tools}
+	in := LaunchInputs{Launch: launch, Inputs: inputs, ProfilePath: profilePath, Worktree: worktree, Instructions: roleInstructions(role, inputs, contextPath, worktree, string(prompt)), Schema: roleSchema(role), Settings: settings, Tools: tools}
 	argv := d.Argv(policy, in)
 	if err := writeExclusive(filepath.Join(output, "adapter-prompt.txt"), []byte(in.Instructions)); err != nil {
 		return err
