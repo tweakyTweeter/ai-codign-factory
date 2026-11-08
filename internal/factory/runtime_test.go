@@ -35,6 +35,73 @@ func TestRunPhase_CopilotEntryRejectsOtherRuntime(t *testing.T) {
 	}
 }
 
+// writeValidRelativePolicy creates a valid policy for role at name inside a
+// fresh cwd, so a test can prove a relative path is refused rather than read.
+func writeValidRelativePolicy(t *testing.T, runtime, role string) string {
+	t.Helper()
+	dir := t.TempDir()
+	t.Chdir(dir)
+	profile := filepath.Join(dir, "p.md")
+	if err := os.WriteFile(profile, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	body := `{"version":2,"runtime":"` + runtime + `","executable":"` + os.Args[0] + `","role":"` + role + `","agent":"p","source_profile":"` + profile + `","grants":["read"]}`
+	if err := os.WriteFile(filepath.Join(dir, "policy.json"), []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestRunPhase_RejectsRelativePolicy(t *testing.T) {
+	for _, expect := range []string{"", "copilot"} {
+		for _, rel := range []string{"policy.json", "./policy.json"} {
+			t.Run(expect+"/"+rel, func(t *testing.T) {
+				runtime := "claude"
+				if expect == "copilot" {
+					runtime = "copilot"
+				}
+				dir := writeValidRelativePolicy(t, runtime, "producer")
+				out := filepath.Join(dir, "out")
+				t.Setenv("FACTORY_ROLE", "producer")
+				t.Setenv("FACTORY_OUTPUT_DIR", out)
+				t.Setenv("FACTORY_RESULT_FILE", filepath.Join(out, "result.json"))
+				t.Setenv("FACTORY_WORKTREE", dir)
+				t.Setenv("FACTORY_CONTEXT_FILE", filepath.Join(dir, "context.json"))
+				err := RunPhase(t.Context(), rel, expect)
+				if err == nil || !strings.HasPrefix(err.Error(), "failure_reason=policy:") || !strings.Contains(err.Error(), "absolute") || !strings.Contains(err.Error(), rel) {
+					t.Fatalf("relative policy %q accepted or misreported: %v", rel, err)
+				}
+				if _, statErr := os.Stat(out); !os.IsNotExist(statErr) {
+					t.Fatalf("output dir touched for a refused policy: %v", statErr)
+				}
+			})
+		}
+	}
+}
+
+func TestInspectPhasePolicy_RejectsRelativePolicy(t *testing.T) {
+	writeValidRelativePolicy(t, "copilot", "qa")
+	for _, rel := range []string{"policy.json", "./policy.json"} {
+		for _, args := range [][]string{{"--policy", rel}, {"--policy=" + rel}, {"-policy", rel}, {"-policy=" + rel}} {
+			for _, sub := range []string{"agent", "copilot"} {
+				argv := append([]string{"/abs/factory", sub}, args...)
+				got, err := InspectPhasePolicy(t.Context(), "qa", "qa", argv)
+				if err == nil || got != nil || !strings.Contains(err.Error(), "failure_reason=policy") || !strings.Contains(err.Error(), "absolute") || !strings.Contains(err.Error(), rel) {
+					t.Fatalf("%v: relative policy accepted or misreported: %+v: %v", argv, got, err)
+				}
+			}
+		}
+	}
+	// The same policy through its absolute path is still accepted.
+	abs, err := filepath.Abs("policy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := InspectPhasePolicy(t.Context(), "qa", "qa", []string{"/abs/factory", "copilot", "--policy", abs}); err != nil || got == nil || got.Runtime != "copilot" {
+		t.Fatalf("absolute policy: %+v: %v", got, err)
+	}
+}
+
 func TestInspectPhasePolicy(t *testing.T) {
 	dir := t.TempDir()
 	profile := filepath.Join(dir, "p.md")

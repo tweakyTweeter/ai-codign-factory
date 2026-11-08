@@ -96,7 +96,8 @@ policy-driven phase (`factory agent|copilot --policy ...`), parses the flags
 exactly as the adapter does (`--policy P`, `--policy=P`, `-policy P`,
 `-policy=P`), loads the policy for the phase role and reports
 `phase_runtimes` (phase, runtime, executable and, for Claude, the version). A
-missing or invalid policy fails `doctor` closed. Specialist phases are
+missing, invalid or relative policy path fails `doctor` closed (see the
+absolute `--policy` rule below). Specialist phases are
 checked only when selected with `--profile`. For Claude phases `doctor` runs
 only `claude --version`; it never starts a model session. A configured
 Conductor wrapper is generic external command execution, not a native adapter.
@@ -234,6 +235,13 @@ candidate and check evidence; it does not independently execute tests.
 Runs one controller phase through the runtime the policy names (`copilot` or
 `claude`). `factory copilot --policy PATH` remains for v1 policies and also
 accepts a v2 Copilot policy; it refuses a policy for any other runtime.
+
+`--policy` must be an **absolute** path for `factory agent`, `factory copilot`
+and `factory doctor`. The controller launches the adapter with the candidate
+worktree as its cwd, so a relative path would resolve to a policy file inside
+the candidate that Dev can modify (and `doctor` would resolve it against its
+own cwd instead). A relative path is refused before the file is read, with
+`failure_reason=policy` and an error naming the path.
 
 A v2 policy is
 `{version:2, runtime, executable, role, agent, source_profile, grants, model?}`

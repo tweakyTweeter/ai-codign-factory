@@ -260,6 +260,60 @@ func TestDoctor_InvalidPolicyFails(t *testing.T) {
 	}
 }
 
+func TestAdapters_RejectRelativePolicy(t *testing.T) {
+	for _, name := range []string{"agent", "copilot"} {
+		for _, rel := range []string{"policy.json", "./policy.json"} {
+			_, err := invoke(t, name, "--policy", rel)
+			var usage *UsageError
+			if err == nil || errors.As(err, &usage) || !strings.Contains(err.Error(), "failure_reason=policy") || !strings.Contains(err.Error(), "absolute") || !strings.Contains(err.Error(), rel) {
+				t.Fatalf("%s --policy %s: want failure_reason=policy absolute-path error, got %v", name, rel, err)
+			}
+		}
+	}
+}
+
+func TestDoctor_RelativePolicyFails(t *testing.T) {
+	for _, rel := range []string{"qa-policy.json", "./qa-policy.json"} {
+		t.Run(rel, func(t *testing.T) {
+			root := doctorWorkflow(t, "qa", false)
+			// A valid qa-policy.json exists at root; resolving the relative
+			// path there would succeed, so a failure proves it is refused.
+			t.Chdir(root)
+			repo, err := factory.Discover(t.Context(), root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfgPath := filepath.Join(repo.State, "config.json")
+			data, err := os.ReadFile(cfgPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var cfg factory.Config
+			if err := json.Unmarshal(data, &cfg); err != nil {
+				t.Fatal(err)
+			}
+			for i, p := range cfg.Workflow.Phases {
+				if p.Name == "qa" {
+					cfg.Workflow.Phases[i].Command.Argv = []string{os.Args[0], "agent", "--policy", rel}
+				}
+			}
+			if data, err = json.Marshal(cfg); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(cfgPath, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			out, err := invoke(t, "doctor", "--repo", root)
+			if err == nil {
+				t.Fatalf("doctor accepted relative --policy %s: %s", rel, out)
+			}
+			if !strings.Contains(err.Error()+out, "absolute") {
+				t.Fatalf("doctor error does not name the absolute-path rule: %s: %v", out, err)
+			}
+		})
+	}
+}
+
 func TestDoctor_ProfileSkipsOtherSpecialistPolicies(t *testing.T) {
 	root := doctorWorkflow(t, "qa", true)
 	if out, err := invoke(t, "doctor", "--repo", root, "--profile", "other"); err == nil {

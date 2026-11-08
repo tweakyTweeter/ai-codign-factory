@@ -246,6 +246,12 @@ func treeManifest(root string) (map[string]string, error) {
 // RunPhase is the supervised phase adapter. expect, when set, restricts the
 // policy runtime (factory copilot passes "copilot"). It never retries.
 func RunPhase(ctx context.Context, policyPath, expect string) (err error) {
+	// The adapter runs with the candidate worktree as its cwd, so a relative
+	// policy path would resolve inside files Dev can modify. Refuse it before
+	// anything is read.
+	if !filepath.IsAbs(policyPath) {
+		return fmt.Errorf("failure_reason=policy: --policy must be an absolute path, got %q", policyPath)
+	}
 	out := &PhaseOutcome{}
 	role, output, result := os.Getenv("FACTORY_ROLE"), os.Getenv("FACTORY_OUTPUT_DIR"), os.Getenv("FACTORY_RESULT_FILE")
 	worktree, contextPath := os.Getenv("FACTORY_WORKTREE"), os.Getenv("FACTORY_CONTEXT_FILE")
@@ -496,6 +502,10 @@ func InspectPhasePolicy(ctx context.Context, phase, role string, argv []string) 
 	}
 	if *path == "" {
 		return nil, fmt.Errorf("phase %s: --policy has no value", phase)
+	}
+	if !filepath.IsAbs(*path) {
+		// Same rule as RunPhase: never resolve a policy against a cwd.
+		return nil, fmt.Errorf("phase %s: failure_reason=policy: --policy must be an absolute path, got %q", phase, *path)
 	}
 	b, err := readBounded(*path)
 	if err != nil {
